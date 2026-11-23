@@ -1,0 +1,395 @@
+-- CombatController: weapon input, first-person viewmodel, recoil and all combat visuals.
+-- It never decides damage: it sends Fire(origin, direction, claimedHitPart) and the server validates.
+-- Controls (PC): Left Mouse = fire, R = reload. Abilities (Shift/E/Q) arrive in Phase 3.
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+
+local player = Players.LocalPlayer
+local WeaponConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("WeaponConfig"))
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local FireRemote = Remotes:WaitForChild("Fire")
+local ReloadRemote = Remotes:WaitForChild("Reload")
+local CombatFx = Remotes:WaitForChild("CombatFx")
+
+local Controls = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("ControlConfig")).Binds
+
+local fxFolder = Instance.new("Folder")
+fxFolder.Name = "LocalCombatFx"
+fxFolder.Parent = workspace
+
+local mouseDown = false
+local lastShot = 0
+local bursting = false
+local localAmmo = 0
+local recoil = 0
+local viewmodel: Model? = nil
+local viewmodelWeapon: string? = nil
+
+local function getWeapon()
+	local id = player:GetAttribute("WeaponId")
+	return id and WeaponConfig.Weapons[id] or nil
+end
+
+local function getHumanoid(): Humanoid?
+	local char = player.Character
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function canAttack(): boolean
+	local hum = getHumanoid()
+	return player:GetAttribute("CombatEnabled") == true and hum ~= nil and hum.Health > 0 and getWeapon() ~= nil
+end
+
+---------------------------------------------------------------- visuals
+local function fxPart(size: Vector3, cf: CFrame, color: Color3, shape: Enum.PartType?): Part
+	local p = Instance.new("Part")
+	p.Anchored = true; p.CanCollide = false; p.CanQuery = false; p.CanTouch = false; p.CastShadow = false
+	p.Material = Enum.Material.Neon
+	p.Color = color
+	p.Size = size
+	p.CFrame = cf
+	if shape then p.Shape = shape end
+	p.Parent = fxFolder
+	return p
+end
+
+local function fade(p: BasePart, t: number, grow: Vector3?)
+	local goal: { [string]: any } = { Transparency = 1 }
+	if grow then goal.Size = grow end
+	TweenService:Create(p, TweenInfo.new(t, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goal):Play()
+	Debris:AddItem(p, t + 0.05)
+end
+
+local function tracer(from: Vector3, to: Vector3, color: Color3, width: number)
+	local dist = (to - from).Magnitude
+	if dist < 0.5 then return end
+	local p = fxPart(Vector3.new(width, width, dist), CFrame.lookAt((from + to) / 2, to), color)
+	p.Transparency = 0.15
+	fade(p, 0.12)
+end
+
+local function flash(pos: Vector3, color: Color3, size: number)
+	local p = fxPart(Vector3.one * size, CFrame.new(pos), color, Enum.PartType.Ball)
+	local light = Instance.new("PointLight")
+	light.Color = color; light.Range = 8; light.Brightness = 3; light.Parent = p
+	fade(p, 0.08)
+end
+
+local function impact(pos: Vector3, color: Color3, radius: number)
+	local size = radius > 0 and radius * 2 or 1.2
+	local p = fxPart(Vector3.one * (size * 0.3), CFrame.new(pos), color, Enum.PartType.Ball)
+	p.Transparency = radius > 0 and 0.2 or 0.4
+	fade(p, radius > 0 and 0.35 or 0.15, Vector3.one * size)
+end
+
+local function slash(origin: Vector3, dir: Vector3, color: Color3)
+	local cf = CFrame.lookAt(origin, origin + dir)
+	for i = -2, 2 do
+		local seg = fxPart(Vector3.new(0.15, 0.15, 2.2), cf * CFrame.Angles(0, math.rad(i * 18), 0) * CFrame.new(0, 0, -3.5), color)
+		seg.Transparency = 0.2
+		fade(seg, 0.18)
+	end
+end
+
+-- visual-only projectiles (the server simulates the real ones)
+type VisualProjectile = { Part: BasePart, Pos: Vector3, Vel: Vector3, Travelled: number, Range: number }
+local visuals: { [any]: VisualProjectile } = {}
+local visualKey = 0
+
+local function visualParams(): RaycastParams
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local list: { Instance } = { fxFolder, workspace.CurrentCamera }
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p.Character then table.insert(list, p.Character) end
+	end
+	params.FilterDescendantsInstances = list
+	return params
+end
+
+local function startVisualProjectile(key: any, from: Vector3, vel: Vector3, w: any)
+	local p = fxPart(Vector3.one * (w.ProjectileSize or 0.5), CFrame.new(from), w.TracerColor, Enum.PartType.Ball)
+	local light = Instance.new("PointLight")
+	light.Color = w.TracerColor; light.Range = 6; light.Brightness = 2; light.Parent = p
+	visuals[key] = { Part = p, Pos = from, Vel = vel, Travelled = 0, Range = w.Range }
+end
+
+local function stopVisual(key: any)
+	local v = visuals[key]
+	if v then
+		v.Part:Destroy()
+		visuals[key] = nil
+	end
+end
+
+RunService.Heartbeat:Connect(function(dt)
+	if next(visuals) == nil then return end
+	local params = visualParams()
+	for key, v in pairs(visuals) do
+		local step = v.Vel * dt
+		local hit = workspace:Raycast(v.Pos, step, params)
+		if hit or v.Travelled >= v.Range then
+			stopVisual(key)
+		else
+			v.Pos += step
+			v.Travelled += step.Magnitude
+			v.Part.CFrame = CFrame.new(v.Pos)
+		end
+	end
+end)
+
+---------------------------------------------------------------- viewmodel
+local function destroyViewmodel()
+	if viewmodel then viewmodel:Destroy() end
+	viewmodel = nil
+	viewmodelWeapon = nil
+end
+
+local HeroAssets = ReplicatedStorage:WaitForChild("HeroAssets", 5)
+local VIEWMODEL_SCALE = 0.55
+
+-- First-person weapon from the ForgeGUI 3D model (pivot = grip, -Z = forward).
+local function buildModelViewmodel(w: any, template: Model): Model
+	local model = Instance.new("Model")
+	model.Name = "Viewmodel"
+	local function addCopy(offset: CFrame)
+		local c = template:Clone()
+		for _, d in ipairs(c:GetDescendants()) do
+			if d:IsA("BasePart") then
+				d.Anchored = true; d.CanCollide = false; d.CanQuery = false; d.CanTouch = false; d.CastShadow = false
+			end
+		end
+		c:ScaleTo(VIEWMODEL_SCALE)
+		c:PivotTo(offset)
+		for _, d in ipairs(c:GetChildren()) do d.Parent = model end
+		c:Destroy()
+	end
+	addCopy(CFrame.new())
+	if w.Id == "EnergyBlades" then addCopy(CFrame.new(-1.1, 0, 0)) end -- second blade in the left hand
+	local muzzle = Instance.new("Part")
+	muzzle.Name = "Muzzle"; muzzle.Size = Vector3.one * 0.1; muzzle.Transparency = 1
+	muzzle.Anchored = true; muzzle.CanCollide = false; muzzle.CanQuery = false; muzzle.CanTouch = false
+	muzzle.CFrame = CFrame.new(0, 0, -(template:GetAttribute("MuzzleDistance") or 1) * VIEWMODEL_SCALE)
+	muzzle.Parent = model
+	local pivot = Instance.new("Part")
+	pivot.Name = "Pivot"; pivot.Size = Vector3.one * 0.1; pivot.Transparency = 1
+	pivot.Anchored = true; pivot.CanCollide = false; pivot.CanQuery = false; pivot.CanTouch = false
+	pivot.CFrame = CFrame.new()
+	pivot.Parent = model
+	local fill = Instance.new("PointLight") -- keeps the weapon readable on dark maps
+	fill.Range = 5; fill.Brightness = 1.4; fill.Shadows = false; fill.Parent = pivot
+	model.PrimaryPart = pivot
+	return model
+end
+
+local function buildViewmodel(w: any)
+	destroyViewmodel()
+	local template = HeroAssets and HeroAssets:FindFirstChild("Weapons") and HeroAssets.Weapons:FindFirstChild(w.Id)
+	if template then
+		local m = buildModelViewmodel(w, template :: Model)
+		m.Parent = workspace.CurrentCamera
+		viewmodel = m
+		viewmodelWeapon = w.Id
+		return
+	end
+	-- fallback: simple block weapon if the 3D model is missing
+	local model = Instance.new("Model")
+	model.Name = "Viewmodel"
+	local function vmPart(name: string, size: Vector3, offset: CFrame, color: Color3, mat: Enum.Material)
+		local p = Instance.new("Part")
+		p.Name = name; p.Size = size; p.Color = color; p.Material = mat
+		p.Anchored = true; p.CanCollide = false; p.CanQuery = false; p.CanTouch = false; p.CastShadow = false
+		p.CFrame = offset
+		p.Parent = model
+		return p
+	end
+	local s = w.ViewSize * 0.5 -- viewmodel is drawn close to the camera, so it is scaled down
+	local body = vmPart("Body", s, CFrame.new(), Color3.fromRGB(35, 38, 48), Enum.Material.Metal)
+	vmPart("Glow", Vector3.new(s.X * 0.4, 0.03, s.Z * 0.6), CFrame.new(0, s.Y / 2, 0), w.Color, Enum.Material.Neon)
+	vmPart("Grip", Vector3.new(s.X * 0.8, 0.6, 0.35), CFrame.new(0, -s.Y / 2 - 0.25, s.Z * 0.2), Color3.fromRGB(25, 25, 32), Enum.Material.Metal)
+	local muzzle = vmPart("Muzzle", Vector3.new(0.1, 0.1, 0.1), CFrame.new(0, 0, -s.Z / 2), w.Color, Enum.Material.Neon)
+	muzzle.Transparency = 1
+	if w.Type == "Melee" then
+		-- second blade for the dual-blade weapon
+		vmPart("Blade2", s, CFrame.new(-1.1, 0, 0), Color3.fromRGB(35, 38, 48), Enum.Material.Metal)
+		vmPart("Glow2", Vector3.new(s.X * 0.4, 0.03, s.Z * 0.9), CFrame.new(-1.1, s.Y / 2, 0), w.Color, Enum.Material.Neon)
+	end
+	model.PrimaryPart = body
+	model.Parent = workspace.CurrentCamera
+	viewmodel = model
+	viewmodelWeapon = w.Id
+end
+
+local function muzzlePosition(): Vector3
+	if viewmodel and viewmodel:FindFirstChild("Muzzle") then
+		return (viewmodel :: any).Muzzle.Position
+	end
+	return workspace.CurrentCamera.CFrame.Position
+end
+
+RunService.RenderStepped:Connect(function(dt)
+	local w = getWeapon()
+	local hum = getHumanoid()
+	local show = w ~= nil and hum ~= nil and hum.Health > 0 and player.CameraMode == Enum.CameraMode.LockFirstPerson
+	if show then
+		if viewmodelWeapon ~= w.Id then buildViewmodel(w) end
+		recoil = math.max(0, recoil - dt * 6)
+		local cam = workspace.CurrentCamera
+		local bob = hum.MoveDirection.Magnitude > 0 and math.sin(os.clock() * 9) * 0.04 or 0
+		local offset = CFrame.new(0.8, -0.62 + bob, -1.55 + recoil * 0.15) * CFrame.Angles(recoil * 0.1, math.rad(9), 0)
+		if w.Type == "Melee" then offset = CFrame.new(0.6, -0.55 + bob, -1.4) * CFrame.Angles(math.rad(-20) + recoil * 0.5, math.rad(10), 0) end
+		local vm: Model = viewmodel :: Model
+		vm:PivotTo(cam.CFrame * offset)
+	elseif viewmodel then
+		destroyViewmodel()
+	end
+end)
+
+---------------------------------------------------------------- firing
+local function clientParams(): RaycastParams
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { player.Character :: Instance, fxFolder, workspace.CurrentCamera }
+	return params
+end
+
+local function spreadDirection(look: Vector3, degrees: number): Vector3
+	if degrees <= 0 then return look end
+	local angle = math.rad(degrees) * math.sqrt(math.random())
+	local theta = math.random() * math.pi * 2
+	return (CFrame.lookAt(Vector3.zero, look) * CFrame.Angles(math.cos(theta) * angle, math.sin(theta) * angle, 0)).LookVector
+end
+
+local function requestReload()
+	local w = getWeapon()
+	if not w or w.MagSize <= 0 or player:GetAttribute("Reloading") then return end
+	if localAmmo >= w.MagSize then return end
+	ReloadRemote:FireServer()
+end
+
+local function fireOnce(): boolean
+	local w = getWeapon()
+	if not w or not canAttack() then return false end
+	if w.MagSize > 0 then
+		if player:GetAttribute("Reloading") then return false end
+		if localAmmo <= 0 then requestReload() return false end
+		localAmmo -= 1
+	end
+	local cam = workspace.CurrentCamera
+	local origin = cam.CFrame.Position
+	local dir = spreadDirection(cam.CFrame.LookVector, w.Spread or 0)
+	local muzzle = muzzlePosition()
+
+	if w.Type == "Hitscan" then
+		local result = workspace:Raycast(origin, dir * w.Range, clientParams())
+		local to = result and result.Position or origin + dir * w.Range
+		tracer(muzzle, to, w.TracerColor, w.Damage >= 50 and 0.14 or 0.06)
+		if result then impact(to, w.TracerColor, 0) end
+		FireRemote:FireServer(origin, dir, result and result.Instance or nil)
+	elseif w.Type == "Projectile" then
+		FireRemote:FireServer(origin, dir)
+		visualKey += 1
+		startVisualProjectile("local" .. visualKey, muzzle, dir * w.ProjectileSpeed, w)
+	elseif w.Type == "Melee" then
+		FireRemote:FireServer(origin, dir)
+		slash(origin - Vector3.new(0, 0.5, 0), Vector3.new(dir.X, 0, dir.Z), w.Color)
+	end
+	if w.Type ~= "Melee" then flash(muzzle, w.TracerColor, 0.6) end
+
+	-- recoil: viewmodel kick + small camera kick (bigger for heavy single shots)
+	local kick = (w.Damage >= 50) and 1.6 or (w.Type == "Melee" and 0 or 0.35)
+	recoil = math.min(recoil + (w.Type == "Melee" and 1 or 0.6), 2)
+	if kick > 0 then
+		cam.CFrame = cam.CFrame * CFrame.Angles(math.rad(kick), 0, 0)
+	end
+	return true
+end
+
+local function tryTrigger()
+	local w = getWeapon()
+	if not w or not canAttack() then return end
+	local t = os.clock()
+	-- ultimates like Overdrive raise fire rate; the server publishes the multiplier
+	local cooldown = w.Cooldown / math.max(player:GetAttribute("FireRateMult") or 1, 0.1)
+	if w.FireMode == "Burst" then
+		if bursting or t - lastShot < cooldown then return end
+		bursting = true
+		task.spawn(function()
+			for i = 1, w.BurstCount do
+				if not fireOnce() then break end
+				if i < w.BurstCount then task.wait(w.BurstInterval) end
+			end
+			lastShot = os.clock()
+			bursting = false
+		end)
+	elseif t - lastShot >= cooldown then
+		if fireOnce() then lastShot = t end
+	end
+end
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.UserInputType == Controls.Fire then
+		mouseDown = true
+		tryTrigger()
+	elseif input.KeyCode == Controls.Reload then
+		requestReload()
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Controls.Fire then mouseDown = false end
+end)
+
+RunService.Heartbeat:Connect(function()
+	if not mouseDown then return end
+	local w = getWeapon()
+	if w and (w.FireMode == "Auto" or w.FireMode == "Burst") then tryTrigger() end
+end)
+
+---------------------------------------------------------------- ammo sync with server truth
+local function syncAmmo()
+	local a = player:GetAttribute("Ammo")
+	if typeof(a) == "number" then localAmmo = a end
+end
+player:GetAttributeChangedSignal("Ammo"):Connect(function()
+	local a = player:GetAttribute("Ammo")
+	if typeof(a) ~= "number" then return end
+	local w = getWeapon()
+	-- Lower = server consumed/rejected shots. Higher is only accepted on a full magazine (reload/respawn),
+	-- so a late update never hands back shots we already fired locally.
+	if a < localAmmo or (w and a >= w.MagSize) then localAmmo = a end
+end)
+player:GetAttributeChangedSignal("Reloading"):Connect(function()
+	if not player:GetAttribute("Reloading") then syncAmmo() end
+end)
+player:GetAttributeChangedSignal("WeaponId"):Connect(syncAmmo)
+player.CharacterAdded:Connect(function()
+	mouseDown = false
+	bursting = false
+	task.wait(0.2)
+	syncAmmo()
+end)
+
+---------------------------------------------------------------- effects from other players (server broadcast)
+CombatFx.OnClientEvent:Connect(function(data)
+	if typeof(data) ~= "table" then return end
+	local w = WeaponConfig.Weapons[data.Weapon]
+	if not w then return end
+	local mine = data.Shooter == player.UserId
+	if data.Type == "Shot" and not mine then
+		tracer(data.From, data.To, w.TracerColor, w.Damage >= 50 and 0.14 or 0.06)
+		impact(data.To, w.TracerColor, 0)
+	elseif data.Type == "Projectile" and not mine then
+		startVisualProjectile(data.Id, data.From, data.Velocity, w)
+	elseif data.Type == "Impact" then
+		stopVisual(data.Id)
+		impact(data.Position, w.TracerColor, data.Radius or 0)
+	elseif data.Type == "Melee" and not mine then
+		slash(data.From, data.Dir, w.Color)
+	end
+end)

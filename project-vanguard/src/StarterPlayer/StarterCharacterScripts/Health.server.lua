@@ -1,0 +1,1 @@
+-- Intentionally empty: disables Roblox's default health regeneration (heals come from abilities).
