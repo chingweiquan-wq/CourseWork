@@ -340,7 +340,7 @@ local mvpAspect = Instance.new("UIAspectRatioConstraint"); mvpAspect.AspectRatio
 local mvpPhoto = Instance.new("ImageLabel"); mvpPhoto.Name = "Photo"; mvpPhoto.BackgroundColor3 = C.Panel; mvpPhoto.Size = UDim2.fromScale(0.24, 0.84); mvpPhoto.Position = UDim2.fromScale(0.03, 0.08); mvpPhoto.Parent = mvpCard
 UI.Corner(mvpPhoto, 12)
 UI.Label({ Parent = mvpCard, Text = "MVP", Font = UI.Fonts.Title, Color = C.Gold, Size = UDim2.fromScale(0.25, 0.3), Position = UDim2.fromScale(0.3, 0.06), AlignX = Enum.TextXAlignment.Left, MaxSize = 30, StrokeSize = 2.5 })
-local mvpName = UI.Label({ Parent = mvpCard, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.68, 0.28), Position = UDim2.fromScale(0.3, 0.34), AlignX = Enum.TextXAlignment.Left, MaxSize = 30, Rich = true, StrokeSize = 2 })
+local mvpName = UI.Label({ Parent = mvpCard, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.52, 0.28), Position = UDim2.fromScale(0.3, 0.34), AlignX = Enum.TextXAlignment.Left, MaxSize = 30, Rich = true, StrokeSize = 2 })
 local mvpStats = UI.Label({ Parent = mvpCard, Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.68, 0.24), Position = UDim2.fromScale(0.3, 0.66), AlignX = Enum.TextXAlignment.Left, MaxSize = 20 })
 UI.Icon({ Parent = mvpCard, Icon = "Trophy", Size = UDim2.fromScale(0.16, 0.6), Position = UDim2.fromScale(0.98, 0.04), AnchorPoint = Vector2.new(1, 0), ZIndex = 3 })
 local bannerScale = Instance.new("UIScale"); bannerScale.Parent = resultTitle
@@ -502,6 +502,7 @@ MatchState.OnClientEvent:Connect(function(data)
 		bannerScale.Scale = 2.2
 		TweenService:Create(bannerScale, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 		showMvp(data.MVP)
+		renderScores(data) -- final % (the live meter attributes are cleared when the match ends)
 		local reasonText = ({ TimeUp = "Time expired", Forfeit = "Opponents left the match", Empty = "Match abandoned", KillLimit = "Kill limit reached", Objective = (winTeam and winTeam.Name or "?") .. " captured the core" })[data.Reason] or tostring(data.Reason)
 		local mode = GameConfig.Modes[data.Mode]
 		local scoreLine = ""

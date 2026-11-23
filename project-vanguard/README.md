@@ -10,7 +10,12 @@ The live game lives in Studio (place 90633802455621); models, maps and UI are no
 | 2 Combat (server-authoritative weapons, K/D/A, kill feed) | Done |
 | 3 Abilities (Dash / Skill / Ultimate for 6 heroes) | Done |
 | Visual pass (darker lighting, 3D weapons, helmets, lobby statues) | Done |
-| 4 Game modes, objective scoring, ranked | Not started |
+| 4 Game modes: Hold the Core, ranked (saved, 7 tiers), match history, MVP results | Done |
+| 5 Progression (tokens, unlocks) | Not started |
+
+## Ranked
+- Saved in DataStore `VG_PlayerData` (Studio uses `STUDIO_` stores). Start 450 RP (Silver II), 100 RP per division.
+- Bronze/Silver/Gold/Platinum/Diamond have III-II-I; Master 1500+, Vanguard 1800+. Tunables in `GameConfig.Ranked`.
 
 ## Layout
 `src/` mirrors the Studio tree:
