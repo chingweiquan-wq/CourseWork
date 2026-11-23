@@ -64,6 +64,10 @@ function Matchmaking.Join(player: Player, modeId: any)
 		Notify:FireClient(player, "You are already in a match.")
 		return
 	end
+	if GameConfig.Modes[modeId].Ranked and player:GetAttribute("RankedReady") ~= true then
+		Notify:FireClient(player, "Ranked is unavailable until your rank data has loaded.")
+		return
+	end
 	if queueOf[player] == modeId then return end
 	if queueOf[player] then Matchmaking.Leave(player, true) end
 	queueOf[player] = modeId

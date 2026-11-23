@@ -13,12 +13,12 @@ GameConfig.IsStudio = RunService:IsStudio()
 
 GameConfig.Modes = {
 	Casual = {
-		Id = "Casual", DisplayName = "CASUAL", Description = "5v5 objective control. Starts from 2v2.",
+		Id = "Casual", DisplayName = "CASUAL", Description = "Hold the Core: control the ring to fill your meter. First to 100% wins.",
 		TeamBased = true, MinPlayers = 4, MaxPlayers = 10, MaxPerTeam = 5, Ranked = false,
 		MatchDuration = 300, RespawnTime = 5,
 	},
 	Ranked = {
-		Id = "Ranked", DisplayName = "RANKED", Description = "Competitive control. Rating on the line.",
+		Id = "Ranked", DisplayName = "RANKED", Description = "Hold the Core with your rank on the line. Winning earns RP.",
 		TeamBased = true, MinPlayers = 4, MaxPlayers = 10, MaxPerTeam = 5, Ranked = true,
 		MatchDuration = 300, RespawnTime = 6,
 	},
@@ -71,6 +71,32 @@ GameConfig.Abilities = {
 	ChargePerHeal = 1,         -- ult points per point of healing done
 	AimRayLength = 120,        -- max distance used when an ability needs an aim point
 	StudioFastUlt = true,      -- Studio solo testing only: ult charges 10x faster so it can be tested quickly
+}
+
+-- Hold the Core (Casual + Ranked): stand in the map's ring with no enemies to fill your team's meter.
+GameConfig.Objective = {
+	SecondsToWin = 90,        -- one player holding alone fills 0 -> 100% in this many seconds
+	ExtraPlayerBonus = 0.15,  -- each extra teammate on the core adds +15% speed...
+	MaxSpeedMult = 1.6,       -- ...up to this cap
+	TickRate = 0.25,          -- server update interval (seconds)
+	HeightAbove = 14,         -- how high above the ring still counts as "on the core"
+	HeightBelow = 3,
+}
+
+-- Ranked: saved with DataStore. Winning decides rating; kills do not.
+GameConfig.Ranked = {
+	Season = 1,
+	SeasonName = "SEASON 1",
+	StartRating = 450,        -- SILVER II
+	K = 40,                   -- max swing for a 50/50 match is +/-20, upsets swing more
+	MinGain = 8,              -- a win is always worth at least this much
+	MinLoss = 8,              -- a loss always costs at least this much
+	LeavePenalty = 10,        -- extra RP lost for leaving a ranked match early
+	SeasonResetBlend = 0.5,   -- new season rating = halfway between old rating and StartRating
+	HistorySize = 10,         -- match history entries kept per player (all modes)
+	AutosaveSeconds = 60,
+	LockTimeout = 150,        -- a session lock older than this is treated as stale
+	LeaderboardRefresh = 60,
 }
 
 function GameConfig.GetMinPlayers(modeId: string): number

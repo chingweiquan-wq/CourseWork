@@ -16,6 +16,7 @@ local MapConfig = require(Modules.MapConfig)
 local HeroConfig = require(Modules.HeroConfig)
 local UI = require(Modules.UIStyle)
 local IconConfig = require(Modules.IconConfig)
+local RankConfig = require(Modules.RankConfig)
 local C = UI.Colors
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -27,6 +28,8 @@ local OpenShop = Remotes:WaitForChild("OpenShop")
 local Notify = Remotes:WaitForChild("Notify")
 local GetLobbyData = Remotes:WaitForChild("GetLobbyData")
 local SelectHero = Remotes:WaitForChild("SelectHero")
+local RankUpdate = Remotes:WaitForChild("RankUpdate")
+local GetMatchHistory = Remotes:WaitForChild("GetMatchHistory")
 
 local profile = { Tokens = 0, UnlockedHeroes = HeroConfig.StarterHeroes, SelectedHero = HeroConfig.StarterHeroes[1], Rank = "Unranked" }
 local queueState = { InQueue = false }
@@ -60,7 +63,9 @@ local lobbyGui = UI.ScreenGui("LobbyUI", playerGui, 5)
 
 -- top-left: profile card (rank badge icon + name + rank/hero)
 local header = UI.Panel({ Parent = lobbyGui, Name = "Profile", Size = UDim2.fromScale(0.22, 0.09), Position = UDim2.fromScale(0.015, 0.11), Color = C.Bg, Transparency = 0.35, Corner = 12 })
-UI.Icon({ Parent = header, Icon = "Ranked", Size = UDim2.fromScale(0.26, 1.15), Position = UDim2.fromScale(0.01, -0.08) })
+local rankBadge = UI.Icon({ Parent = header, Icon = "Ranked", Size = UDim2.fromScale(0.26, 1.15), Position = UDim2.fromScale(0.01, -0.08) })
+local historyHit = Instance.new("TextButton") -- click the profile card to open match history
+historyHit.Name = "OpenHistory"; historyHit.Text = ""; historyHit.BackgroundTransparency = 1; historyHit.Size = UDim2.fromScale(1, 1); historyHit.ZIndex = 5; historyHit.Parent = header
 UI.Label({ Parent = header, Text = player.DisplayName, Font = UI.Fonts.Title, Size = UDim2.fromScale(0.7, 0.48), Position = UDim2.fromScale(0.28, 0.06), AlignX = Enum.TextXAlignment.Left, MaxSize = 30, StrokeSize = 2 })
 local profileLabel = UI.Label({ Parent = header, Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.7, 0.36), Position = UDim2.fromScale(0.28, 0.56), AlignX = Enum.TextXAlignment.Left, MaxSize = 20, Rich = true })
 
@@ -118,8 +123,23 @@ local queueTitle = UI.Label({ Parent = queueBar, Text = "SEARCHING", Font = UI.F
 local queueInfo = UI.Label({ Parent = queueBar, Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.68, 0.36), Position = UDim2.fromScale(0.04, 0.58), AlignX = Enum.TextXAlignment.Left, MaxSize = 18 })
 local cancelBtn = UI.Button({ Parent = queueBar, Name = "Cancel", Text = "CANCEL", Size = UDim2.fromScale(0.24, 0.64), Position = UDim2.fromScale(0.96, 0.5), AnchorPoint = Vector2.new(1, 0.5), Accent = C.Red, MaxSize = 20 })
 
+local function hex(c: Color3): string
+	return string.format("#%02x%02x%02x", math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255))
+end
+
+-- rank shown everywhere comes from server-set attributes (Rating), never from the client
+local function currentRank(): (string, Color3, string?)
+	local rating = player:GetAttribute("Rating")
+	if typeof(rating) ~= "number" then return "UNRANKED", C.Subtext, nil end
+	local info = RankConfig.Get(rating)
+	return info.Name, info.Tier.Color, info.Tier.Icon
+end
+
 local function refreshProfile()
-	profileLabel.Text = string.format("<font color=\"#c88cff\">%s</font>  -  <font color=\"#00dcff\">%s</font>", string.upper(profile.Rank), string.upper(profile.SelectedHero))
+	local rankName, rankColor, rankIcon = currentRank()
+	profileLabel.Text = string.format("<font color=\"%s\">%s</font>  -  <font color=\"#00dcff\">%s</font>", hex(rankColor), rankName, string.upper(profile.SelectedHero))
+	local badge = rankIcon and IconConfig.Get(rankIcon) or ""
+	rankBadge.Image = badge ~= "" and badge or IconConfig.Get("Ranked")
 	tokenLabel.Text = tostring(profile.Tokens)
 end
 
@@ -164,6 +184,20 @@ for i, modeId in ipairs(GameConfig.ModeOrder) do
 	local maps = {}
 	for _, id in ipairs(MapConfig.GetMapsForMode(modeId)) do table.insert(maps, MapConfig.Maps[id].DisplayName) end
 	UI.Label({ Parent = card, Text = table.concat(maps, "  -  "), Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.86, 0.06), Position = UDim2.fromScale(0.07, 0.73), MaxSize = 14 })
+	if modeId == "Ranked" then
+		local yourRank = UI.Label({ Parent = card, Name = "YourRank", Text = "", Font = UI.Fonts.Title, Color = C.Gold, Size = UDim2.fromScale(0.86, 0.055), Position = UDim2.fromScale(0.07, 0.785), MaxSize = 18, Rich = true })
+		local function updateRankLine()
+			local rating = player:GetAttribute("Rating")
+			if typeof(rating) == "number" then
+				local info = RankConfig.Get(rating)
+				yourRank.Text = string.format("YOUR RANK: <font color=\"%s\">%s</font>  (%d RP)", hex(info.Tier.Color), info.Name, rating)
+			else
+				yourRank.Text = "YOUR RANK: loading..."
+			end
+		end
+		player:GetAttributeChangedSignal("Rating"):Connect(updateRankLine)
+		updateRankLine()
+	end
 	local q = UI.Button({ Parent = card, Name = "Queue", Text = "QUEUE", Size = UDim2.fromScale(0.8, 0.13), Position = UDim2.fromScale(0.5, 0.92), AnchorPoint = Vector2.new(0.5, 1), Accent = accent, MaxSize = 28 })
 	q.MouseButton1Click:Connect(function()
 		QueueRequest:FireServer("Join", modeId)
@@ -282,14 +316,34 @@ local alphaScore = UI.Label({ Parent = hudTop, Text = "0", Font = UI.Fonts.Title
 local bravoScore = UI.Label({ Parent = hudTop, Text = "0", Font = UI.Fonts.Title, Color = GameConfig.Teams.Bravo.Color, Size = UDim2.fromScale(0.2, 0.7), Position = UDim2.fromScale(0.77, 0.15), MaxSize = 40 })
 local timerLabel = UI.Label({ Parent = hudTop, Text = "0:00", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.5, 0.5), Position = UDim2.fromScale(0.25, 0.05), MaxSize = 34 })
 local mapLabel = UI.Label({ Parent = hudTop, Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.5, 0.35), Position = UDim2.fromScale(0.25, 0.58), MaxSize = 16 })
-local teamTag = UI.Label({ Parent = matchGui, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.2, 0.04), Position = UDim2.fromScale(0.5, 0.13), AnchorPoint = Vector2.new(0.5, 0), MaxSize = 22 })
+-- Hold the Core meter: Alpha fills from the left, Bravo from the right; status line underneath
+local objFrame = UI.Panel({ Parent = matchGui, Name = "CoreMeter", Size = UDim2.fromScale(0.36, 0.022), Position = UDim2.fromScale(0.5, 0.127), AnchorPoint = Vector2.new(0.5, 0), Color = C.Bg, Transparency = 0.25, Corner = 6 })
+objFrame.Visible = false
+local alphaHalf = Instance.new("Frame"); alphaHalf.BackgroundTransparency = 1; alphaHalf.Size = UDim2.fromScale(0.495, 1); alphaHalf.Parent = objFrame
+local bravoHalf = Instance.new("Frame"); bravoHalf.BackgroundTransparency = 1; bravoHalf.Size = UDim2.fromScale(0.495, 1); bravoHalf.Position = UDim2.fromScale(0.505, 0); bravoHalf.Parent = objFrame
+local alphaFill = UI.Panel({ Parent = alphaHalf, Name = "AlphaFill", Size = UDim2.fromScale(0, 1), Color = GameConfig.Teams.Alpha.Color, Transparency = 0, Corner = 6 })
+local bravoFill = UI.Panel({ Parent = bravoHalf, Name = "BravoFill", Size = UDim2.fromScale(0, 1), Position = UDim2.fromScale(1, 0), AnchorPoint = Vector2.new(1, 0), Color = GameConfig.Teams.Bravo.Color, Transparency = 0, Corner = 6 })
+local objStatus = UI.Label({ Parent = matchGui, Name = "CoreStatus", Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.3, 0.032), Position = UDim2.fromScale(0.5, 0.152), AnchorPoint = Vector2.new(0.5, 0), MaxSize = 22 })
+objStatus.Visible = false
+local teamTag = UI.Label({ Parent = matchGui, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.2, 0.035), Position = UDim2.fromScale(0.5, 0.188), AnchorPoint = Vector2.new(0.5, 0), MaxSize = 20 })
 local centerMsg = UI.Label({ Parent = matchGui, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.6, 0.1), Position = UDim2.fromScale(0.5, 0.32), AnchorPoint = Vector2.new(0.5, 0.5), MaxSize = 64, Color = C.Cyan })
 
 local resultGui = UI.ScreenGui("MatchResultUI", playerGui, 20)
 resultGui.Enabled = false
 local resultBg = Instance.new("Frame"); resultBg.Size = UDim2.fromScale(1, 1); resultBg.BackgroundColor3 = Color3.new(0, 0, 0); resultBg.BackgroundTransparency = 0.35; resultBg.Parent = resultGui
 local resultTitle = UI.Label({ Parent = resultBg, Text = "VICTORY", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.6, 0.16), Position = UDim2.fromScale(0.5, 0.36), AnchorPoint = Vector2.new(0.5, 0.5), MaxSize = 110 })
-local resultSub = UI.Label({ Parent = resultBg, Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.6, 0.18), Position = UDim2.fromScale(0.5, 0.56), AnchorPoint = Vector2.new(0.5, 0.5), MaxSize = 26 })
+local resultSub = UI.Label({ Parent = resultBg, Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.6, 0.16), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), MaxSize = 24 })
+local resultRank = UI.Label({ Parent = resultBg, Name = "RankChange", Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.6, 0.06), Position = UDim2.fromScale(0.5, 0.61), AnchorPoint = Vector2.new(0.5, 0.5), MaxSize = 34, Rich = true, StrokeSize = 2.5 })
+-- MVP card
+local mvpCard = UI.Panel({ Parent = resultBg, Name = "MVP", Size = UDim2.fromScale(0.34, 0.17), Position = UDim2.fromScale(0.5, 0.79), AnchorPoint = Vector2.new(0.5, 0.5), Color = C.Bg, Transparency = 0.1, Stroke = C.Gold, StrokeThickness = 3, Corner = 14 })
+local mvpAspect = Instance.new("UIAspectRatioConstraint"); mvpAspect.AspectRatio = 3.6; mvpAspect.Parent = mvpCard
+local mvpPhoto = Instance.new("ImageLabel"); mvpPhoto.Name = "Photo"; mvpPhoto.BackgroundColor3 = C.Panel; mvpPhoto.Size = UDim2.fromScale(0.24, 0.84); mvpPhoto.Position = UDim2.fromScale(0.03, 0.08); mvpPhoto.Parent = mvpCard
+UI.Corner(mvpPhoto, 12)
+UI.Label({ Parent = mvpCard, Text = "MVP", Font = UI.Fonts.Title, Color = C.Gold, Size = UDim2.fromScale(0.25, 0.3), Position = UDim2.fromScale(0.3, 0.06), AlignX = Enum.TextXAlignment.Left, MaxSize = 30, StrokeSize = 2.5 })
+local mvpName = UI.Label({ Parent = mvpCard, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.68, 0.28), Position = UDim2.fromScale(0.3, 0.34), AlignX = Enum.TextXAlignment.Left, MaxSize = 30, Rich = true, StrokeSize = 2 })
+local mvpStats = UI.Label({ Parent = mvpCard, Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.68, 0.24), Position = UDim2.fromScale(0.3, 0.66), AlignX = Enum.TextXAlignment.Left, MaxSize = 20 })
+UI.Icon({ Parent = mvpCard, Icon = "Trophy", Size = UDim2.fromScale(0.16, 0.6), Position = UDim2.fromScale(0.98, 0.04), AnchorPoint = Vector2.new(1, 0), ZIndex = 3 })
+local bannerScale = Instance.new("UIScale"); bannerScale.Parent = resultTitle
 
 local currentMatch: { [string]: any }? = nil
 
@@ -326,9 +380,78 @@ end
 
 local function renderScores(data)
 	if data.Scores then
-		alphaScore.Text = tostring(data.Scores.Alpha or 0)
-		bravoScore.Text = tostring(data.Scores.Bravo or 0)
+		local mode = GameConfig.Modes[data.Mode]
+		local pct = (mode and mode.TeamBased) and "%" or ""
+		alphaScore.Text = tostring(data.Scores.Alpha or 0) .. pct
+		bravoScore.Text = tostring(data.Scores.Bravo or 0) .. pct
 	end
+end
+
+-- live core meter from server attributes
+local function renderCore()
+	local a = player:GetAttribute("ObjAlpha")
+	local b = player:GetAttribute("ObjBravo")
+	local state = player:GetAttribute("ObjState")
+	local show = typeof(a) == "number" and typeof(b) == "number"
+	objFrame.Visible = show
+	objStatus.Visible = show
+	if not show then return end
+	alphaFill.Size = UDim2.fromScale(a / 100, 1)
+	bravoFill.Size = UDim2.fromScale(b / 100, 1)
+	alphaScore.Text = a .. "%"
+	bravoScore.Text = b .. "%"
+	local mine = player:GetAttribute("Team")
+	local onPoint = player:GetAttribute("ObjOnPoint") == true
+	if state == "Contested" then
+		objStatus.Text = "CORE CONTESTED"; objStatus.TextColor3 = C.Gold
+	elseif state == mine then
+		objStatus.Text = onPoint and "CAPTURING THE CORE" or "YOUR TEAM HOLDS THE CORE"; objStatus.TextColor3 = C.Green
+	elseif state == "Alpha" or state == "Bravo" then
+		objStatus.Text = "ENEMY HOLDS THE CORE"; objStatus.TextColor3 = C.Red
+	else
+		objStatus.Text = "CORE NEUTRAL - TAKE IT"; objStatus.TextColor3 = C.Text
+	end
+end
+for _, attr in ipairs({ "ObjAlpha", "ObjBravo", "ObjState", "ObjOnPoint" }) do
+	player:GetAttributeChangedSignal(attr):Connect(renderCore)
+end
+
+local lastRankUpdate: { [string]: any }? = nil
+local function renderRankLine()
+	local r = lastRankUpdate
+	if not r then resultRank.Text = ""; return end
+	local info = RankConfig.Get(r.New)
+	local sign = r.Delta >= 0 and "+" or ""
+	local deltaColor = r.Delta >= 0 and "#50ffa0" or "#ff466e"
+	local extra = r.Promoted and "  RANK UP!" or (r.Demoted and "  RANK DOWN" or "")
+	resultRank.Text = string.format("<font color=\"%s\">%s</font>  %d RP  <font color=\"%s\">(%s%d)</font>%s", hex(info.Tier.Color), info.Name, r.New, deltaColor, sign, r.Delta, extra)
+end
+RankUpdate.OnClientEvent:Connect(function(data)
+	if typeof(data) ~= "table" or typeof(data.New) ~= "number" or typeof(data.Delta) ~= "number" then return end
+	lastRankUpdate = data
+	renderRankLine()
+	refreshProfile()
+	if data.Promoted then toast("RANK UP! " .. tostring(data.NewRank), C.Gold) end
+end)
+
+local function showMvp(mvp: { [string]: any }?)
+	mvpCard.Visible = mvp ~= nil
+	if not mvp then return end
+	local hero = HeroConfig.Heroes[mvp.Hero or ""]
+	local teamCfg = GameConfig.Teams[mvp.Team or ""]
+	local nameColor = teamCfg and teamCfg.Color or C.Gold
+	local heroText = hero and ("  <font color=\"" .. hex(hero.Color) .. "\">" .. string.upper(hero.DisplayName) .. "</font>") or ""
+	mvpName.Text = string.format("<font color=\"%s\">%s</font>%s", hex(nameColor), tostring(mvp.Name), heroText)
+	local obj = (mvp.ObjTime or 0) > 0 and string.format("  -  %ds on core", mvp.ObjTime) or ""
+	mvpStats.Text = string.format("%d / %d / %d  K/D/A%s", mvp.Kills or 0, mvp.Deaths or 0, mvp.Assists or 0, obj)
+	mvpPhoto.Image = ""
+	task.spawn(function()
+		local ok, img = pcall(function()
+			return Players:GetUserThumbnailAsync(mvp.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+		end)
+		if ok then mvpPhoto.Image = img end
+	end)
+	UI.PopIn(mvpCard)
 end
 
 MatchState.OnClientEvent:Connect(function(data)
@@ -344,6 +467,7 @@ MatchState.OnClientEvent:Connect(function(data)
 		local teamBased = mode ~= nil and mode.TeamBased
 		alphaScore.Visible = teamBased
 		bravoScore.Visible = teamBased
+		renderCore()
 		mapLabel.Text = string.format("%s  |  %s", mapInfo and mapInfo.DisplayName or "?", mode and mode.DisplayName or "")
 		local team = data.YourTeam or ""
 		local tcfg = GameConfig.Teams[team]
@@ -362,24 +486,32 @@ MatchState.OnClientEvent:Connect(function(data)
 		currentMatch = nil
 		centerMsg.Text = ""
 		resultGui.Enabled = true
+		local endedMode = GameConfig.Modes[data.Mode]
+		lastRankUpdate = nil -- the ranked result arrives a moment later via RankUpdate
+		resultRank.Text = (endedMode and endedMode.Ranked and not data.Abandoned) and "Updating rank..." or ""
 		local won = data.Winner ~= nil and data.Winner == data.YourTeam
+		local winTeam = GameConfig.Teams[data.Winner or ""]
 		if data.Winner == nil then
 			resultTitle.Text = "DRAW"; resultTitle.TextColor3 = C.Gold
 		elseif won then
-			resultTitle.Text = "VICTORY"; resultTitle.TextColor3 = C.Cyan
+			resultTitle.Text = "VICTORY"; resultTitle.TextColor3 = winTeam and winTeam.Color or C.Gold
 		else
 			resultTitle.Text = "DEFEAT"; resultTitle.TextColor3 = C.Red
 		end
-		local reasonText = ({ TimeUp = "Time expired", Forfeit = "Opponents left the match", Empty = "Match abandoned", KillLimit = "Kill limit reached" })[data.Reason] or tostring(data.Reason)
+		-- banner slam-in
+		bannerScale.Scale = 2.2
+		TweenService:Create(bannerScale, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		showMvp(data.MVP)
+		local reasonText = ({ TimeUp = "Time expired", Forfeit = "Opponents left the match", Empty = "Match abandoned", KillLimit = "Kill limit reached", Objective = (winTeam and winTeam.Name or "?") .. " captured the core" })[data.Reason] or tostring(data.Reason)
 		local mode = GameConfig.Modes[data.Mode]
 		local scoreLine = ""
 		if mode and mode.TeamBased then
 			local tk = data.TeamKills or {}
-			scoreLine = string.format("ALPHA %d  -  %d BRAVO   (eliminations %d - %d)", data.Scores.Alpha or 0, data.Scores.Bravo or 0, tk.Alpha or 0, tk.Bravo or 0)
+			scoreLine = string.format("CORE  ALPHA %d%%  -  %d%% BRAVO   (eliminations %d - %d)", data.Scores.Alpha or 0, data.Scores.Bravo or 0, tk.Alpha or 0, tk.Bravo or 0)
 		end
 		local mine = data.Stats and data.Stats[player.DisplayName]
 		local statLine = mine and string.format("YOUR STATS:  %d kills  /  %d deaths  /  %d assists", mine.Kills, mine.Deaths, mine.Assists) or ""
-		resultSub.Text = string.format("%s\n%s\n%s\nReturning to lobby...", reasonText, scoreLine, statLine)
+		resultSub.Text = string.format("%s\n%s\n%s", reasonText, scoreLine, statLine)
 	elseif data.State == "Lobby" then
 		currentMatch = nil
 		resultGui.Enabled = false
@@ -420,6 +552,50 @@ RunService.Heartbeat:Connect(function()
 		if currentMatch.State == "PreMatch" then centerMsg.Text = string.format("GET READY  %d", math.ceil(left)) end
 	end
 end)
+
+---------------------------------------------------------------- MATCH HISTORY (click the profile card)
+local historyDim, historyBody = makeModal(lobbyGui, "MATCH HISTORY", C.Magenta)
+historyDim.Name = "HistoryMenu"
+local seasonLine = UI.Label({ Parent = historyBody, Name = "Season", Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(1, 0.09), Position = UDim2.fromScale(0, 0), AlignX = Enum.TextXAlignment.Left, MaxSize = 26, Rich = true })
+local historyList = Instance.new("Frame"); historyList.Name = "List"; historyList.BackgroundTransparency = 1
+historyList.Size = UDim2.fromScale(1, 0.88); historyList.Position = UDim2.fromScale(0, 0.12); historyList.Parent = historyBody
+local hl = Instance.new("UIListLayout"); hl.Padding = UDim.new(0.012, 0); hl.SortOrder = Enum.SortOrder.LayoutOrder; hl.Parent = historyList
+local RESULT_STYLE = { W = { "WIN", C.Green }, L = { "LOSS", C.Red }, D = { "DRAW", C.Gold }, Left = { "LEFT", C.Subtext } }
+
+local function openHistory()
+	for _, c in ipairs(historyList:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+	local rating = player:GetAttribute("Rating")
+	if typeof(rating) == "number" then
+		local info = RankConfig.Get(rating)
+		seasonLine.Text = string.format("%s  -  <font color=\"%s\">%s</font>  %d RP   <font color=\"#8c96b9\">%d W / %d L</font>", GameConfig.Ranked.SeasonName, hex(info.Tier.Color), info.Name, rating, player:GetAttribute("RankedWins") or 0, player:GetAttribute("RankedLosses") or 0)
+	else
+		seasonLine.Text = GameConfig.Ranked.SeasonName .. "  -  rank loading..."
+	end
+	showModal(historyDim)
+	local ok, list = pcall(function() return GetMatchHistory:InvokeServer() end)
+	if not ok or typeof(list) ~= "table" or #list == 0 then
+		local empty = UI.Panel({ Parent = historyList, Size = UDim2.fromScale(1, 0.12), Color = C.Panel })
+		UI.Label({ Parent = empty, Text = "No matches yet - go play!", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(1, 0.7), Position = UDim2.fromScale(0, 0.15), MaxSize = 22 })
+		return
+	end
+	for i, e in ipairs(list) do
+		local style = RESULT_STYLE[e.Result] or RESULT_STYLE.D
+		local row = UI.Panel({ Parent = historyList, Name = "Row" .. i, Size = UDim2.fromScale(1, 0.088), Color = C.Panel, Transparency = 0.1, Stroke = style[2] })
+		row.LayoutOrder = i
+		UI.Label({ Parent = row, Text = style[1], Font = UI.Fonts.Title, Color = style[2], Size = UDim2.fromScale(0.12, 0.8), Position = UDim2.fromScale(0.01, 0.1), MaxSize = 24 })
+		local mode = GameConfig.Modes[e.Mode]
+		local map = MapConfig.Maps[e.Map]
+		UI.Label({ Parent = row, Text = string.format("%s  -  %s", mode and mode.DisplayName or tostring(e.Mode), map and map.DisplayName or tostring(e.Map)), Font = UI.Fonts.Bold, Size = UDim2.fromScale(0.42, 0.7), Position = UDim2.fromScale(0.14, 0.15), AlignX = Enum.TextXAlignment.Left, MaxSize = 20 })
+		UI.Label({ Parent = row, Text = string.format("%d / %d / %d", e.K or 0, e.D or 0, e.A or 0), Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.16, 0.7), Position = UDim2.fromScale(0.57, 0.15), MaxSize = 20 })
+		local deltaText = ""
+		if typeof(e.Delta) == "number" then deltaText = string.format("<font color=\"%s\">%s%d RP</font>", e.Delta >= 0 and "#50ffa0" or "#ff466e", e.Delta >= 0 and "+" or "", e.Delta) end
+		UI.Label({ Parent = row, Text = deltaText, Font = UI.Fonts.Title, Size = UDim2.fromScale(0.13, 0.7), Position = UDim2.fromScale(0.73, 0.15), MaxSize = 20, Rich = true })
+		local ago = typeof(e.T) == "number" and math.max(0, os.time() - e.T) or 0
+		local agoText = ago < 3600 and (math.floor(ago / 60) .. "m ago") or (ago < 86400 and (math.floor(ago / 3600) .. "h ago") or (math.floor(ago / 86400) .. "d ago"))
+		UI.Label({ Parent = row, Text = agoText, Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.12, 0.6), Position = UDim2.fromScale(0.87, 0.2), MaxSize = 16 })
+	end
+end
+historyHit.MouseButton1Click:Connect(openHistory)
 
 ---------------------------------------------------------------- BUTTON WIRING
 playBtn.MouseButton1Click:Connect(function()
@@ -534,6 +710,7 @@ local function onHeroAttr()
 	end
 end
 player:GetAttributeChangedSignal("Hero"):Connect(onHeroAttr)
+player:GetAttributeChangedSignal("Rating"):Connect(refreshProfile)
 
 refreshProfile()
 refreshCards()

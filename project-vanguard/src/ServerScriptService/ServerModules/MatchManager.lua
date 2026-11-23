@@ -2,7 +2,8 @@
 -- MatchManager: owns the life-cycle of every running match.
 -- PreMatch -> Live -> Ended -> players returned to lobby, map unloaded.
 -- Phase 2: records eliminations (K/D/A, streaks, first blood), duel kill limit, team-kill tiebreak.
--- Objective scoring (Scores via AddScore) arrives in Phase 4.
+-- Phase 4: Scores = Hold-the-Core % (ObjectiveService), ObjTime per player, MVP, ranked team balancing,
+-- PlayerLeft event (RankedService applies leave penalties).
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
@@ -25,29 +26,33 @@ export type Match = {
 	Players: { Player },
 	TeamOf: { [Player]: string },
 	Scores: { [string]: number },
-	Stats: { [Player]: { Kills: number, Deaths: number, Assists: number } },
+	Stats: { [Player]: { Kills: number, Deaths: number, Assists: number, ObjTime: number } },
 	TeamKills: { [string]: number },
 	FirstBloodTaken: boolean,
 	Streaks: { [Player]: { Streak: number, Chain: number, LastKill: number } },
 	State: string,
 	EndsAt: number,
 	Abandoned: boolean,
+	Winner: string?,
+	EndReason: string?,
+	Extra: { [string]: any }, -- scratch space for other services (ranked expectations, etc.)
 }
 
 local MatchManager = {}
 
 local matches: { [string]: Match } = {}
 local matchOfPlayer: { [Player]: Match } = {}
-local listeners: { [string]: { (Match) -> () } } = { Started = {}, Live = {}, Ended = {} }
+local listeners: { [string]: { (...any) -> () } } = { Started = {}, Live = {}, Ended = {}, PlayerLeft = {} }
 
 -- Lets other services (combat, dummies, later abilities/rewards) react to match events without circular requires.
-function MatchManager.On(eventName: string, fn: (Match) -> ())
+-- Events: Started(match), Live(match), Ended(match), PlayerLeft(match, player, team)
+function MatchManager.On(eventName: string, fn: (...any) -> ())
 	table.insert(listeners[eventName], fn)
 end
 
-local function emit(eventName: string, match: Match)
+local function emit(eventName: string, ...: any)
 	for _, fn in ipairs(listeners[eventName]) do
-		task.spawn(fn, match)
+		task.spawn(fn, ...)
 	end
 end
 
@@ -120,9 +125,23 @@ local function shuffle<T>(list: { T }): { T }
 end
 
 -- Alternating assignment guarantees team sizes never differ by more than one.
+-- Ranked: players are sorted by rating and snake-drafted (A B B A A B ...) so team averages stay close.
+local SNAKE = { "Alpha", "Bravo", "Bravo", "Alpha" }
 local function assignTeams(match: Match, players: { Player })
 	local mode = GameConfig.Modes[match.Mode]
 	local shuffled = shuffle(players)
+	if mode.Ranked then
+		table.sort(shuffled, function(a, b)
+			return (tonumber(a:GetAttribute("Rating")) or 0) > (tonumber(b:GetAttribute("Rating")) or 0)
+		end)
+		for i, p in ipairs(shuffled) do
+			local team = SNAKE[((i - 1) % 4) + 1]
+			match.TeamOf[p] = team
+		end
+		match.Scores.Alpha = 0
+		match.Scores.Bravo = 0
+		return
+	end
 	for i, p in ipairs(shuffled) do
 		local team
 		if mode.TeamBased then
@@ -163,7 +182,7 @@ local function bestOf(values: { [string]: number }): string?
 	return best
 end
 
--- Objective score decides; team eliminations break ties (until Phase 4 objectives produce real scores).
+-- Objective % decides; team eliminations break ties.
 local function determineWinner(match: Match): string?
 	return bestOf(match.Scores) or bestOf(match.TeamKills)
 end
@@ -242,16 +261,45 @@ function MatchManager.GetRespawnTime(player: Player): number
 	return GameConfig.Lobby.RespawnTime
 end
 
+-- MVP: best impact score, taken from the winning side when there is one.
+-- Objective time and assists count, so supports and core holders can earn it too.
+local function mvpScore(s: { Kills: number, Deaths: number, Assists: number, ObjTime: number }): number
+	return s.Kills * 100 + s.Assists * 50 + s.ObjTime * 8 - s.Deaths * 20
+end
+
+local function pickMvp(match: Match, winner: string?): Player?
+	local best, bestScore = nil, -math.huge
+	for _, p in ipairs(match.Players) do
+		local s = match.Stats[p]
+		if s and (winner == nil or match.TeamOf[p] == winner) then
+			local score = mvpScore(s)
+			if score > bestScore then best, bestScore = p, score end
+		end
+	end
+	return best
+end
+
 function MatchManager.EndMatch(match: Match, reason: string, forcedWinner: string?)
 	if match.State == "Ended" then return end
 	match.State = "Ended"
 	local winner = forcedWinner or determineWinner(match)
+	match.Winner = winner
+	match.EndReason = reason
 	for _, p in ipairs(match.Players) do p:SetAttribute("CombatEnabled", false) end
 	local statsByName = {}
 	for p, s in pairs(match.Stats) do
-		statsByName[p.DisplayName] = { Kills = s.Kills, Deaths = s.Deaths, Assists = s.Assists, Team = match.TeamOf[p] }
+		if match.TeamOf[p] then
+			statsByName[p.DisplayName] = { Kills = s.Kills, Deaths = s.Deaths, Assists = s.Assists, ObjTime = math.floor(s.ObjTime), Team = match.TeamOf[p] }
+		end
 	end
-	broadcast(match, { State = "Ended", Winner = winner, Reason = reason, Abandoned = match.Abandoned, TeamKills = match.TeamKills, Stats = statsByName })
+	local mvp = pickMvp(match, winner)
+	local mvpPayload = nil
+	if mvp then
+		local s = match.Stats[mvp]
+		mvpPayload = { Name = mvp.DisplayName, UserId = mvp.UserId, Hero = mvp:GetAttribute("Hero"), Team = match.TeamOf[mvp],
+			Kills = s.Kills, Deaths = s.Deaths, Assists = s.Assists, ObjTime = math.floor(s.ObjTime) }
+	end
+	broadcast(match, { State = "Ended", Winner = winner, Reason = reason, Abandoned = match.Abandoned, TeamKills = match.TeamKills, Stats = statsByName, MVP = mvpPayload })
 	emit("Ended", match)
 	print(string.format("[MatchManager] Match %s ended (%s). Winner: %s", match.Id, reason, tostring(winner)))
 
@@ -336,13 +384,16 @@ function MatchManager.StartMatch(modeId: string, players: { Player }): boolean
 		State = "PreMatch",
 		EndsAt = now() + GameConfig.Match.PreMatchSeconds,
 		Abandoned = false,
+		Winner = nil,
+		EndReason = nil,
+		Extra = {},
 	}
 	assignTeams(match, valid)
 	matches[match.Id] = match
 
 	for _, p in ipairs(valid) do
 		matchOfPlayer[p] = match
-		match.Stats[p] = { Kills = 0, Deaths = 0, Assists = 0 }
+		match.Stats[p] = { Kills = 0, Deaths = 0, Assists = 0, ObjTime = 0 }
 		match.Streaks[p] = { Streak = 0, Chain = 0, LastKill = -math.huge }
 		setStatAttrs(p, match)
 		p:SetAttribute("CombatEnabled", false)
@@ -366,7 +417,9 @@ local function onPlayerLeft(player: Player)
 
 	local idx = table.find(match.Players, player)
 	if idx then table.remove(match.Players, idx) end
+	local leftTeam = match.TeamOf[player]
 	match.TeamOf[player] = nil
+	emit("PlayerLeft", match, player, leftTeam)
 
 	-- If a side is now empty, the remaining side wins by forfeit.
 	local remaining: { [string]: number } = {}

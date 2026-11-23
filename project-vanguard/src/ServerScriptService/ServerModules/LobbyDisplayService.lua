@@ -255,7 +255,14 @@ function LobbyDisplayService.Init()
 		buildSign(s, "Gem", "TOP SUPPORTERS", Color3.fromRGB(90, 255, 140))
 	end
 	local join = L:FindFirstChild("JoinGameSign")
-	if join then clearDecals(join) end
+	if join then
+		clearDecals(join)
+		local s = join:FindFirstChild("Sign") :: BasePart?
+		if s then
+			s.Name = "RankedBoard" -- rows filled by RankedService
+			buildSign(s, "Ranked", "TOP RANKED  -  " .. GameConfig.Ranked.SeasonName, Color3.fromRGB(200, 120, 255))
+		end
+	end
 
 	Players.PlayerRemoving:Connect(function(p) padQueued[p] = nil end)
 	task.spawn(function()
