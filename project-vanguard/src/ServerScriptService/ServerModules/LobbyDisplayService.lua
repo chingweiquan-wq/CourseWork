@@ -148,10 +148,12 @@ local function buildSign(sign: BasePart, iconName: string, title: string, color:
 	rows.Parent = bg
 	local list = Instance.new("UIListLayout")
 	list.Padding = UDim.new(0.01, 0)
+	list.SortOrder = Enum.SortOrder.LayoutOrder -- keep #1..#10 in number order (name order would put Row10 after Row1)
 	list.Parent = rows
 	for i = 1, 10 do
 		local r = Instance.new("Frame")
 		r.Name = "Row" .. i
+		r.LayoutOrder = i
 		r.Size = UDim2.fromScale(1, 0.09)
 		r.BackgroundColor3 = i <= 3 and Color3.fromRGB(40, 36, 20) or Color3.fromRGB(24, 28, 44)
 		r.Parent = rows

@@ -17,6 +17,7 @@ local HeroConfig = require(Modules.HeroConfig)
 local UI = require(Modules.UIStyle)
 local IconConfig = require(Modules.IconConfig)
 local RankConfig = require(Modules.RankConfig)
+local RankBadge = require(Modules.RankBadge)
 local C = UI.Colors
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -66,6 +67,8 @@ local header = UI.Panel({ Parent = lobbyGui, Name = "Profile", Size = UDim2.from
 local rankBadge = UI.Icon({ Parent = header, Icon = "Ranked", Size = UDim2.fromScale(0.26, 1.15), Position = UDim2.fromScale(0.01, -0.08) })
 local historyHit = Instance.new("TextButton") -- click the profile card to open match history
 historyHit.Name = "OpenHistory"; historyHit.Text = ""; historyHit.BackgroundTransparency = 1; historyHit.Size = UDim2.fromScale(1, 1); historyHit.ZIndex = 5; historyHit.Parent = header
+-- 3D rank badge (gently sways); the flat Ranked icon only shows until the rank has loaded
+local profileBadge = RankBadge.Viewport({ Parent = header, Name = "RankBadge3D", Size = UDim2.fromScale(0.3, 1.3), Position = UDim2.fromScale(-0.01, -0.15), ZIndex = 3, Spin = true })
 UI.Label({ Parent = header, Text = player.DisplayName, Font = UI.Fonts.Title, Size = UDim2.fromScale(0.7, 0.48), Position = UDim2.fromScale(0.28, 0.06), AlignX = Enum.TextXAlignment.Left, MaxSize = 30, StrokeSize = 2 })
 local profileLabel = UI.Label({ Parent = header, Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.7, 0.36), Position = UDim2.fromScale(0.28, 0.56), AlignX = Enum.TextXAlignment.Left, MaxSize = 20, Rich = true })
 
@@ -138,8 +141,10 @@ end
 local function refreshProfile()
 	local rankName, rankColor, rankIcon = currentRank()
 	profileLabel.Text = string.format("<font color=\"%s\">%s</font>  -  <font color=\"#00dcff\">%s</font>", hex(rankColor), rankName, string.upper(profile.SelectedHero))
-	local badge = rankIcon and IconConfig.Get(rankIcon) or ""
-	rankBadge.Image = badge ~= "" and badge or IconConfig.Get("Ranked")
+	local rating = player:GetAttribute("Rating")
+	local tierId = typeof(rating) == "number" and RankConfig.Get(rating).Tier.Id or nil
+	profileBadge.Set(tierId)
+	rankBadge.Visible = tierId == nil
 	tokenLabel.Text = tostring(profile.Tokens)
 end
 
@@ -333,9 +338,11 @@ resultGui.Enabled = false
 local resultBg = Instance.new("Frame"); resultBg.Size = UDim2.fromScale(1, 1); resultBg.BackgroundColor3 = Color3.new(0, 0, 0); resultBg.BackgroundTransparency = 0.35; resultBg.Parent = resultGui
 local resultTitle = UI.Label({ Parent = resultBg, Text = "VICTORY", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.6, 0.16), Position = UDim2.fromScale(0.5, 0.36), AnchorPoint = Vector2.new(0.5, 0.5), MaxSize = 110 })
 local resultSub = UI.Label({ Parent = resultBg, Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.6, 0.16), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), MaxSize = 24 })
-local resultRank = UI.Label({ Parent = resultBg, Name = "RankChange", Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.6, 0.06), Position = UDim2.fromScale(0.5, 0.61), AnchorPoint = Vector2.new(0.5, 0.5), MaxSize = 34, Rich = true, StrokeSize = 2.5 })
+local resultRank = UI.Label({ Parent = resultBg, Name = "RankChange", Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.6, 0.05), Position = UDim2.fromScale(0.5, 0.715), AnchorPoint = Vector2.new(0.5, 0.5), MaxSize = 32, Rich = true, StrokeSize = 2.5 })
+local resultBadge = RankBadge.Viewport({ Parent = resultBg, Name = "RankBadge3D", Size = UDim2.fromScale(0.12, 0.11), Position = UDim2.fromScale(0.5, 0.635), AnchorPoint = Vector2.new(0.5, 0.5), Spin = true })
+resultBadge.Set(nil)
 -- MVP card
-local mvpCard = UI.Panel({ Parent = resultBg, Name = "MVP", Size = UDim2.fromScale(0.34, 0.17), Position = UDim2.fromScale(0.5, 0.79), AnchorPoint = Vector2.new(0.5, 0.5), Color = C.Bg, Transparency = 0.1, Stroke = C.Gold, StrokeThickness = 3, Corner = 14 })
+local mvpCard = UI.Panel({ Parent = resultBg, Name = "MVP", Size = UDim2.fromScale(0.34, 0.17), Position = UDim2.fromScale(0.5, 0.84), AnchorPoint = Vector2.new(0.5, 0.5), Color = C.Bg, Transparency = 0.1, Stroke = C.Gold, StrokeThickness = 3, Corner = 14 })
 local mvpAspect = Instance.new("UIAspectRatioConstraint"); mvpAspect.AspectRatio = 3.6; mvpAspect.Parent = mvpCard
 local mvpPhoto = Instance.new("ImageLabel"); mvpPhoto.Name = "Photo"; mvpPhoto.BackgroundColor3 = C.Panel; mvpPhoto.Size = UDim2.fromScale(0.24, 0.84); mvpPhoto.Position = UDim2.fromScale(0.03, 0.08); mvpPhoto.Parent = mvpCard
 UI.Corner(mvpPhoto, 12)
@@ -419,8 +426,9 @@ end
 local lastRankUpdate: { [string]: any }? = nil
 local function renderRankLine()
 	local r = lastRankUpdate
-	if not r then resultRank.Text = ""; return end
+	if not r then resultRank.Text = ""; resultBadge.Set(nil); return end
 	local info = RankConfig.Get(r.New)
+	resultBadge.Set(info.Tier.Id)
 	local sign = r.Delta >= 0 and "+" or ""
 	local deltaColor = r.Delta >= 0 and "#50ffa0" or "#ff466e"
 	local extra = r.Promoted and "  RANK UP!" or (r.Demoted and "  RANK DOWN" or "")
@@ -488,6 +496,7 @@ MatchState.OnClientEvent:Connect(function(data)
 		resultGui.Enabled = true
 		local endedMode = GameConfig.Modes[data.Mode]
 		lastRankUpdate = nil -- the ranked result arrives a moment later via RankUpdate
+		resultBadge.Set(nil)
 		resultRank.Text = (endedMode and endedMode.Ranked and not data.Abandoned) and "Updating rank..." or ""
 		local won = data.Winner ~= nil and data.Winner == data.YourTeam
 		local winTeam = GameConfig.Teams[data.Winner or ""]
@@ -557,7 +566,8 @@ end)
 ---------------------------------------------------------------- MATCH HISTORY (click the profile card)
 local historyDim, historyBody = makeModal(lobbyGui, "MATCH HISTORY", C.Magenta)
 historyDim.Name = "HistoryMenu"
-local seasonLine = UI.Label({ Parent = historyBody, Name = "Season", Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(1, 0.09), Position = UDim2.fromScale(0, 0), AlignX = Enum.TextXAlignment.Left, MaxSize = 26, Rich = true })
+local historyBadge = RankBadge.Viewport({ Parent = historyBody, Name = "RankBadge3D", Size = UDim2.fromScale(0.08, 0.11), Position = UDim2.fromScale(0, -0.01), Spin = true })
+local seasonLine = UI.Label({ Parent = historyBody, Name = "Season", Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.09), Position = UDim2.fromScale(0.08, 0), AlignX = Enum.TextXAlignment.Left, MaxSize = 26, Rich = true })
 local historyList = Instance.new("Frame"); historyList.Name = "List"; historyList.BackgroundTransparency = 1
 historyList.Size = UDim2.fromScale(1, 0.88); historyList.Position = UDim2.fromScale(0, 0.12); historyList.Parent = historyBody
 local hl = Instance.new("UIListLayout"); hl.Padding = UDim.new(0.012, 0); hl.SortOrder = Enum.SortOrder.LayoutOrder; hl.Parent = historyList
@@ -568,6 +578,7 @@ local function openHistory()
 	local rating = player:GetAttribute("Rating")
 	if typeof(rating) == "number" then
 		local info = RankConfig.Get(rating)
+		historyBadge.Set(info.Tier.Id)
 		seasonLine.Text = string.format("%s  -  <font color=\"%s\">%s</font>  %d RP   <font color=\"#8c96b9\">%d W / %d L</font>", GameConfig.Ranked.SeasonName, hex(info.Tier.Color), info.Name, rating, player:GetAttribute("RankedWins") or 0, player:GetAttribute("RankedLosses") or 0)
 	else
 		seasonLine.Text = GameConfig.Ranked.SeasonName .. "  -  rank loading..."

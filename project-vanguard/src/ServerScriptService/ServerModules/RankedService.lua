@@ -301,14 +301,18 @@ local function refreshBoard()
 			local nameLabel = row:FindFirstChild("PlayerName") :: TextLabel?
 			local valueLabel = row:FindFirstChild("Value") :: TextLabel?
 			if nameLabel and valueLabel then
+				-- leave room for the 3D badge each client draws between the name and the rank (RankBadgeController)
+				nameLabel.Size = UDim2.fromScale(0.44, 0.8)
 				if item then
 					local info = RankConfig.Get(item.value)
 					nameLabel.Text = nameOf(tonumber(item.key) or 0)
 					valueLabel.Text = info.Name
 					valueLabel.TextColor3 = info.Tier.Color
+					row:SetAttribute("Tier", info.Tier.Id)
 				else
 					nameLabel.Text = "---"
 					valueLabel.Text = "-"
+					row:SetAttribute("Tier", nil)
 				end
 			end
 		end
