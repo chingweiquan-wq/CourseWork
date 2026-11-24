@@ -99,6 +99,20 @@ GameConfig.Ranked = {
 	LeaderboardRefresh = 60,
 }
 
+-- Progression (Phase 5): TOKENS economy, daily streak, anti-farm. All rewards are decided on the server.
+GameConfig.Progression = {
+	StartingTokens = 0,
+	Rewards = { Complete = 40, Win = 30, MVP = 10 }, -- per finished match
+	RankedMultiplier = 1.25,  -- ranked matches pay a bit more
+	MinActiveFraction = 0.3,  -- AFK check: must be moving / on the core for 30% of the match to earn tokens
+	ActivitySample = 2,       -- seconds between activity samples
+	ActiveMoveStuds = 4,      -- moving at least this far between samples counts as active
+	MinTrackedSeconds = 20,   -- matches shorter than this skip the AFK check
+	Daily = { 50, 75, 100, 125, 150, 200, 300 }, -- 7-day login streak, then it repeats
+	BuyCooldown = 0.5,        -- seconds between purchase requests
+	ReceiptsKept = 100,       -- Robux receipt IDs remembered per player (stops double-granting)
+}
+
 function GameConfig.GetMinPlayers(modeId: string): number
 	local mode = GameConfig.Modes[modeId]
 	if GameConfig.IsStudio and GameConfig.StudioSoloTesting then

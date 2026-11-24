@@ -1,12 +1,12 @@
 --!strict
 -- LobbyService: Shop navigation to Isaac, Isaac's interaction prompt, and lobby profile data.
--- Profile data is a Phase 1 placeholder; Phase 5 replaces GetProfile with DataService (DataStore-backed).
+-- Profile data comes from ProgressionService (saved tokens, owned heroes, selected hero, daily streak).
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local GameConfig = require(ReplicatedStorage.Modules.GameConfig)
-local HeroConfig = require(ReplicatedStorage.Modules.HeroConfig)
 local MatchManager = require(script.Parent.MatchManager)
+local ProgressionService = require(script.Parent.ProgressionService)
 
 local Remotes = ReplicatedStorage.Remotes
 local ShopNavigate = Remotes.ShopNavigate :: RemoteEvent
@@ -17,23 +17,9 @@ local LobbyService = {}
 local lastShopTeleport: { [Player]: number } = {}
 
 function LobbyService.GetProfile(player: Player)
-	-- PLACEHOLDER until DataService (Phase 5). Not saved.
-	-- Studio solo testing unlocks every hero so all weapons can be tested; live servers use starter heroes only.
-	local unlocked = table.clone(HeroConfig.StarterHeroes)
-	if GameConfig.IsStudio and GameConfig.StudioSoloTesting then
-		unlocked = table.clone(HeroConfig.HeroOrder)
-	end
-	local selected = player:GetAttribute("Hero")
-	if typeof(selected) ~= "string" or not table.find(unlocked, selected) then
-		selected = HeroConfig.StarterHeroes[1]
-	end
-	return {
-		Tokens = 0,
-		UnlockedHeroes = unlocked,
-		SelectedHero = selected,
-		Rank = "Unranked",
-		IsPlaceholder = true,
-	}
+	local profile = ProgressionService.GetProfile(player)
+	profile.Rank = player:GetAttribute("RankName") or "Unranked"
+	return profile
 end
 
 function LobbyService.Init()

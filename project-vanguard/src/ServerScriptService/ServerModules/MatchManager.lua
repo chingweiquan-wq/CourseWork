@@ -293,6 +293,7 @@ function MatchManager.EndMatch(match: Match, reason: string, forcedWinner: strin
 		end
 	end
 	local mvp = pickMvp(match, winner)
+	match.Extra.MvpUserId = mvp and mvp.UserId or nil -- ProgressionService pays the MVP bonus
 	local mvpPayload = nil
 	if mvp then
 		local s = match.Stats[mvp]

@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -18,6 +19,7 @@ local UI = require(Modules.UIStyle)
 local IconConfig = require(Modules.IconConfig)
 local RankConfig = require(Modules.RankConfig)
 local RankBadge = require(Modules.RankBadge)
+local ProductConfig = require(Modules.ProductConfig)
 local C = UI.Colors
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -31,6 +33,10 @@ local GetLobbyData = Remotes:WaitForChild("GetLobbyData")
 local SelectHero = Remotes:WaitForChild("SelectHero")
 local RankUpdate = Remotes:WaitForChild("RankUpdate")
 local GetMatchHistory = Remotes:WaitForChild("GetMatchHistory")
+local BuyHero = Remotes:WaitForChild("BuyHero")
+local BuyHeroRobux = Remotes:WaitForChild("BuyHeroRobux")
+local ClaimDaily = Remotes:WaitForChild("ClaimDaily")
+local TokensEarned = Remotes:WaitForChild("TokensEarned")
 
 local profile = { Tokens = 0, UnlockedHeroes = HeroConfig.StarterHeroes, SelectedHero = HeroConfig.StarterHeroes[1], Rank = "Unranked" }
 local queueState = { InQueue = false }
@@ -279,13 +285,40 @@ local function refreshCards()
 	end
 end
 
-dAction.MouseButton1Click:Connect(function()
-	if isUnlocked(viewedHero) then
-		-- the server validates ownership and sets the "Hero" attribute (saving arrives in Phase 5)
-		SelectHero:FireServer(viewedHero)
-	else
-		toast("Hero purchasing unlocks in Phase 5 (token economy)", C.Gold)
+-- Buying a hero with tokens: click once to see the price, click again within 3s to confirm.
+-- The server re-checks everything (price, balance, ownership) and saves the unlock.
+local confirmAt: { [string]: number } = {}
+local buying = false
+local function purchaseHero(id: string)
+	local h = HeroConfig.Heroes[id]
+	if isUnlocked(id) then
+		SelectHero:FireServer(id) -- the server validates ownership and sets the "Hero" attribute
+		return
 	end
+	if buying then return end
+	local tokens = profile.Tokens
+	if tokens < h.Price then
+		toast(string.format("You need %d more tokens for %s", h.Price - tokens, h.DisplayName), C.Gold)
+		return
+	end
+	if not confirmAt[id] or os.clock() - confirmAt[id] > 3 then
+		confirmAt[id] = os.clock()
+		toast(string.format("Click again to unlock %s for %d tokens", h.DisplayName, h.Price), C.Gold)
+		return
+	end
+	confirmAt[id] = nil
+	buying = true
+	local ok, res = pcall(function() return BuyHero:InvokeServer(id) end)
+	buying = false
+	if ok and typeof(res) == "table" and res.Ok then
+		toast("HERO UNLOCKED: " .. h.DisplayName, h.Color)
+	else
+		toast((ok and typeof(res) == "table" and res.Reason) or "Purchase failed - try again", C.Red)
+	end
+end
+
+dAction.MouseButton1Click:Connect(function()
+	purchaseHero(viewedHero)
 end)
 
 ---------------------------------------------------------------- SHOP (opened by Isaac)
@@ -301,11 +334,11 @@ local function showTab(name: string)
 			local h = HeroConfig.Heroes[id]
 			table.insert(lines, string.format("%s  -  %s  -  %s", h.DisplayName, h.Role, isUnlocked(id) and "<font color=\"#50ffa0\">OWNED</font>" or ("<font color=\"#ffc83c\">" .. h.Price .. " TOKENS</font>")))
 		end
-		shopText.Text = table.concat(lines, "\n") .. "\n\n<font color=\"#8c96b9\">Purchasing goes live in Phase 5.</font>"
+		shopText.Text = table.concat(lines, "\n") .. "\n\n<font color=\"#8c96b9\">Buy heroes from the Heroes menu.</font>"
 	elseif name == "WEAPON SKINS" then
 		shopText.Text = "Cosmetic weapon skins (Robux only, no gameplay advantage).\n\n<font color=\"#8c96b9\">Catalog, previews and secure purchases go live in Phase 6.</font>"
 	else
-		shopText.Text = string.format("Balance: <font color=\"#ffc83c\">%d TOKENS</font>\n\nEarn tokens by completing and winning matches.\n\n<font color=\"#8c96b9\">Token rewards go live in Phase 5.</font>", profile.Tokens)
+		shopText.Text = string.format("Balance: <font color=\"#ffc83c\">%d TOKENS</font>\n\nEarn tokens by finishing matches (+%d), winning (+%d), MVP (+%d) and your daily login streak.", profile.Tokens, GameConfig.Progression.Rewards.Complete, GameConfig.Progression.Rewards.Win, GameConfig.Progression.Rewards.MVP)
 	end
 end
 for i, name in ipairs(tabs) do
@@ -423,6 +456,20 @@ for _, attr in ipairs({ "ObjAlpha", "ObjBravo", "ObjState", "ObjOnPoint" }) do
 	player:GetAttributeChangedSignal(attr):Connect(renderCore)
 end
 
+local resultBaseText = ""
+TokensEarned.OnClientEvent:Connect(function(data)
+	if typeof(data) ~= "table" then return end
+	local line
+	if typeof(data.Reason) == "string" then
+		line = data.Reason
+	else
+		local parts = {}
+		for _, l in ipairs(data.Lines or {}) do table.insert(parts, string.format("%s +%d", tostring(l[1]), tonumber(l[2]) or 0)) end
+		line = string.format("TOKENS +%d   (%s)", tonumber(data.Total) or 0, table.concat(parts, ", "))
+	end
+	resultSub.Text = resultBaseText ~= "" and (resultBaseText .. "\n" .. line) or line
+end)
+
 local lastRankUpdate: { [string]: any }? = nil
 local function renderRankLine()
 	local r = lastRankUpdate
@@ -522,6 +569,7 @@ MatchState.OnClientEvent:Connect(function(data)
 		local mine = data.Stats and data.Stats[player.DisplayName]
 		local statLine = mine and string.format("YOUR STATS:  %d kills  /  %d deaths  /  %d assists", mine.Kills, mine.Deaths, mine.Assists) or ""
 		resultSub.Text = string.format("%s\n%s\n%s", reasonText, scoreLine, statLine)
+		resultBaseText = resultSub.Text
 	elseif data.State == "Lobby" then
 		currentMatch = nil
 		resultGui.Enabled = false
@@ -638,6 +686,71 @@ if kitFrame then
 	end)
 end
 
+local HeroAssets = ReplicatedStorage:WaitForChild("HeroAssets", 5)
+local kitItems: { [string]: { Buy: TextButton, Robux: TextButton?, Stroke: UIStroke? } } = {}
+local robuxPrices: { [string]: number } = {}
+
+-- 3D hero statue inside a shop card (replaces the kit's placeholder image)
+local function statueView(holder: GuiObject, heroId: string)
+	local vf = Instance.new("ViewportFrame")
+	vf.Name = "Statue"
+	vf.BackgroundTransparency = 1
+	vf.Size = holder.Size
+	vf.Position = holder.Position
+	vf.AnchorPoint = holder.AnchorPoint
+	vf.ZIndex = holder.ZIndex
+	vf.Ambient = Color3.fromRGB(150, 150, 170)
+	vf.LightDirection = Vector3.new(0.4, -0.6, 1)
+	local cam = Instance.new("Camera")
+	cam.FieldOfView = 40
+	cam.CFrame = CFrame.lookAt(Vector3.new(0, 4.3, -13), Vector3.new(0, 4, 0))
+	cam.Parent = vf
+	vf.CurrentCamera = cam
+	local tpl = HeroAssets and HeroAssets:FindFirstChild("Statues") and HeroAssets.Statues:FindFirstChild(heroId)
+	if tpl then
+		local m = tpl:Clone()
+		m:PivotTo(CFrame.new())
+		m.Parent = vf
+	end
+	vf.Parent = holder.Parent
+	holder.Visible = false
+end
+
+local function refreshKitItems()
+	for id, refs in pairs(kitItems) do
+		local h = HeroConfig.Heroes[id]
+		local owned = isUnlocked(id)
+		if owned then
+			refs.Buy.Text = profile.SelectedHero == id and "SELECTED" or "SELECT"
+			refs.Buy.BackgroundColor3 = C.Green
+		else
+			refs.Buy.Text = h.Price .. " TOKENS"
+			refs.Buy.BackgroundColor3 = profile.Tokens >= h.Price and C.Gold or Color3.fromRGB(120, 110, 80)
+		end
+		if refs.Robux then
+			refs.Robux.Visible = not owned
+			refs.Robux.Text = robuxPrices[id] and ("R$ " .. robuxPrices[id]) or "R$ ..."
+		end
+		-- full-width token button when there is no Robux option
+		local fullWidth = owned or refs.Robux == nil
+		refs.Buy.Size = fullWidth and refs.Buy:GetAttribute("FullSize") or refs.Buy:GetAttribute("HalfSize")
+	end
+end
+
+-- Dark neon look to match the lobby (keeps the kit's layout and animations)
+local function restyleKit()
+	kitFrame.ImageTransparency = 1
+	kitFrame.BackgroundColor3 = C.Bg
+	kitFrame.BackgroundTransparency = 0.04
+	UI.Corner(kitFrame, 18)
+	UI.Stroke(kitFrame, C.Cyan, 3, 0)
+	local label = kitFrame:FindFirstChild("ShopLabel") :: TextLabel?
+	if label then
+		label.TextColor3 = C.Gold
+		label.Font = UI.Fonts.Title
+	end
+end
+
 local function populateKitShop()
 	if not kitFrame then return end
 	local items = kitFrame:FindFirstChild("Items")
@@ -648,34 +761,69 @@ local function populateKitShop()
 		if c:IsA("Frame") and c.Name:match("^item") then c:Destroy() end
 	end
 	kitFrame.ShopLabel.Text = "Isaac's Armory"
+	restyleKit()
 	for i, id in ipairs(HeroConfig.HeroOrder) do
 		local h = HeroConfig.Heroes[id]
 		local item = template:Clone()
 		item.Name = "hero_" .. id
 		item.LayoutOrder = i
+		item.BackgroundColor3 = C.Panel
+		local stroke = item:FindFirstChildOfClass("UIStroke")
+		if stroke then stroke.Color = h.Color; stroke.Thickness = 2 end
 		item.TextLabel.Text = h.DisplayName
+		item.TextLabel.TextColor3 = h.Color
+		item.TextLabel.Font = UI.Fonts.Title
 		for _, img in ipairs(item:GetChildren()) do
-			if img:IsA("ImageLabel") and img.Image:find("GuiImagePlaceholder") then
-				img.Image = IconConfig.Get("Characters")
-				img.ImageColor3 = Color3.new(1, 1, 1):Lerp(h.Color, 0.45)
-				img.BackgroundTransparency = 1
+			if img:IsA("ImageLabel") then
+				if img.Image:find("GuiImagePlaceholder") then
+					statueView(img, id)
+				else
+					img.Visible = false -- the kit's Robux coin decoration
+				end
 			end
 		end
 		local buy = item:FindFirstChild("Buy") :: TextButton
-		if isUnlocked(id) then
-			buy.Text = "OWNED"
-		else
-			buy.Text = h.Price .. " Tokens"
+		buy.TextColor3 = C.Bg
+		buy.Font = UI.Fonts.Title
+		local buyStroke = buy:FindFirstChildOfClass("UIStroke")
+		if buyStroke then buyStroke.Enabled = false end -- the kit's thick black outline hides small text
+		-- split the kit's single button into TOKENS | R$ when a Robux product exists for this hero
+		local full = buy.Size
+		local half = UDim2.new(full.X.Scale * 0.48, full.X.Offset * 0.48, full.Y.Scale, full.Y.Offset)
+		buy:SetAttribute("FullSize", full)
+		buy:SetAttribute("HalfSize", half)
+		local robux: TextButton? = nil
+		local productId = ProductConfig.HeroProducts[id]
+		if productId and productId > 0 then
+			-- anchor both buttons at the kit button's left edge so they sit side by side
+			local leftX = UDim.new(buy.Position.X.Scale - buy.AnchorPoint.X * full.X.Scale, buy.Position.X.Offset - buy.AnchorPoint.X * full.X.Offset)
+			buy.AnchorPoint = Vector2.new(0, buy.AnchorPoint.Y)
+			buy.Position = UDim2.new(leftX, buy.Position.Y)
+			local r = buy:Clone()
+			r.Name = "BuyRobux"
+			r.Size = half
+			r.Position = UDim2.new(leftX.Scale + full.X.Scale * 0.52, leftX.Offset + full.X.Offset * 0.52, buy.Position.Y.Scale, buy.Position.Y.Offset)
+			r.BackgroundColor3 = Color3.fromRGB(0, 176, 111)
+			r.TextColor3 = Color3.new(1, 1, 1)
+			r.Parent = item
+			r.MouseButton1Click:Connect(function()
+				if isUnlocked(id) then return end
+				BuyHeroRobux:FireServer(id) -- the server checks ownership and shows Roblox's purchase prompt
+			end)
+			robux = r
+			task.spawn(function()
+				local ok, info = pcall(function() return MarketplaceService:GetProductInfo(productId, Enum.InfoType.Product) end)
+				if ok and info and info.PriceInRobux then
+					robuxPrices[id] = info.PriceInRobux
+					refreshKitItems()
+				end
+			end)
 		end
-		buy.MouseButton1Click:Connect(function()
-			if isUnlocked(id) then
-				toast(h.DisplayName .. " is already yours - select it in Heroes", C.Green)
-			else
-				toast("Hero purchasing unlocks in Phase 5 (token economy)", C.Gold)
-			end
-		end)
+		buy.MouseButton1Click:Connect(function() purchaseHero(id) end)
+		kitItems[id] = { Buy = buy, Robux = robux, Stroke = stroke }
 		item.Parent = items
 	end
+	refreshKitItems()
 	if not kitFrame:FindFirstChild("Credit") then
 		local credit = UI.Label({ Parent = kitFrame, Name = "Credit", Text = "Shop UI by @roary16", Font = UI.Fonts.Body, Color = C.Subtext, Size = UDim2.fromScale(0.4, 0.04), Position = UDim2.fromScale(0.58, 0.95), MaxSize = 12, NoStroke = true })
 		credit.TextXAlignment = Enum.TextXAlignment.Right
@@ -724,8 +872,108 @@ end
 player:GetAttributeChangedSignal("Hero"):Connect(onHeroAttr)
 player:GetAttributeChangedSignal("Rating"):Connect(refreshProfile)
 
+-- tokens and owned heroes come from server-set attributes, so the UI updates the moment anything changes
+local function syncProgress()
+	local t = player:GetAttribute("Tokens")
+	if typeof(t) == "number" then profile.Tokens = t end
+	local u = player:GetAttribute("UnlockedHeroes")
+	if typeof(u) == "string" and u ~= "" then profile.UnlockedHeroes = string.split(u, ",") end
+	tokenLabel.Text = tostring(profile.Tokens)
+	refreshCards()
+	showHero(viewedHero)
+	refreshKitItems()
+end
+player:GetAttributeChangedSignal("Tokens"):Connect(syncProgress)
+player:GetAttributeChangedSignal("UnlockedHeroes"):Connect(syncProgress)
+
+---------------------------------------------------------------- DAILY REWARD (7-day streak calendar)
+local dailyGui = UI.ScreenGui("DailyUI", playerGui, 12)
+local dailyDim, dailyBody = makeModal(dailyGui, "DAILY REWARD", C.Gold)
+dailyDim.Name = "DailyMenu"
+local dailyHint = UI.Label({ Parent = dailyBody, Name = "Hint", Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(1, 0.08), Position = UDim2.fromScale(0, 0), MaxSize = 22 })
+local dayRow = Instance.new("Frame"); dayRow.Name = "Days"; dayRow.BackgroundTransparency = 1
+dayRow.Size = UDim2.fromScale(1, 0.6); dayRow.Position = UDim2.fromScale(0, 0.12); dayRow.Parent = dailyBody
+local dayList = Instance.new("UIListLayout"); dayList.FillDirection = Enum.FillDirection.Horizontal
+dayList.HorizontalAlignment = Enum.HorizontalAlignment.Center; dayList.VerticalAlignment = Enum.VerticalAlignment.Center
+dayList.Padding = UDim.new(0.012, 0); dayList.SortOrder = Enum.SortOrder.LayoutOrder; dayList.Parent = dayRow
+local claimBtn = UI.Button({ Parent = dailyBody, Name = "Claim", Text = "CLAIM", Size = UDim2.fromScale(0.36, 0.14), Position = UDim2.fromScale(0.5, 0.82), AnchorPoint = Vector2.new(0.5, 0), Accent = C.Gold, MaxSize = 30 })
+local dayCards: { { Frame: Frame, Stroke: UIStroke, Check: TextLabel, Scale: UIScale } } = {}
+for i, amount in ipairs(GameConfig.Progression.Daily) do
+	local big = i == #GameConfig.Progression.Daily
+	local card = UI.Panel({ Parent = dayRow, Name = "Day" .. i, Size = UDim2.fromScale(big and 0.155 or 0.122, big and 1 or 0.88), Color = C.Panel, Corner = 12 })
+	card.LayoutOrder = i
+	local stroke = UI.Stroke(card, C.Subtext, 2, 0.3)
+	UI.Label({ Parent = card, Text = "DAY " .. i, Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.17), Position = UDim2.fromScale(0.05, 0.05), MaxSize = 22 })
+	UI.Icon({ Parent = card, Icon = "Token", Size = UDim2.fromScale(0.62, 0.42), Position = UDim2.fromScale(0.5, 0.48), AnchorPoint = Vector2.new(0.5, 0.5) })
+	UI.Label({ Parent = card, Text = tostring(amount), Font = UI.Fonts.Title, Color = C.Gold, Size = UDim2.fromScale(0.9, 0.2), Position = UDim2.fromScale(0.05, 0.74), MaxSize = 30 })
+	local check = UI.Label({ Parent = card, Name = "Check", Text = "CLAIMED", Font = UI.Fonts.Title, Color = C.Green, Size = UDim2.fromScale(1.1, 0.2), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), MaxSize = 20, StrokeSize = 2.5 })
+	check.Rotation = -18
+	check.ZIndex = 5
+	local sc = Instance.new("UIScale"); sc.Parent = card
+	dayCards[i] = { Frame = card, Stroke = stroke, Check = check, Scale = sc }
+end
+
+local dailyState: { [string]: any }? = nil
+local function renderDaily()
+	local d = dailyState
+	if not d then return end
+	local current = tonumber(d.Day) or 1
+	for i, c in ipairs(dayCards) do
+		local claimed = (d.CanClaim and i < current) or (not d.CanClaim and i <= current)
+		local isToday = d.CanClaim and i == current
+		c.Check.Visible = claimed
+		c.Frame.BackgroundTransparency = claimed and 0.5 or 0
+		c.Stroke.Color = isToday and C.Gold or (claimed and C.Green or C.Subtext)
+		c.Stroke.Thickness = isToday and 4 or 2
+		c.Scale.Scale = isToday and 1.08 or 1
+	end
+	if d.CanClaim then
+		claimBtn.Text = string.format("CLAIM +%d", GameConfig.Progression.Daily[current] or 0)
+		dailyHint.Text = current == 1 and "Log in every day to build your streak - day 7 pays the most!" or string.format("Day %d streak - keep it going!", current)
+	else
+		local hours = math.max(1, math.ceil((tonumber(d.SecondsToReset) or 0) / 3600))
+		claimBtn.Text = "COME BACK TOMORROW"
+		dailyHint.Text = string.format("Next reward in about %d hour%s. Miss a day and the streak restarts.", hours, hours == 1 and "" or "s")
+	end
+end
+
+local claiming = false
+claimBtn.MouseButton1Click:Connect(function()
+	if claiming or not dailyState or not dailyState.CanClaim then return end
+	claiming = true
+	local ok, res = pcall(function() return ClaimDaily:InvokeServer() end)
+	claiming = false
+	if ok and typeof(res) == "table" then
+		if res.Daily then dailyState = res.Daily end
+		renderDaily()
+		if res.Ok then
+			toast(string.format("+%d TOKENS - Day %d reward", res.Amount, res.Day), C.Gold)
+			task.delay(1.2, function() if dailyDim.Visible and openPanel == dailyDim then dailyDim.Visible = false; openPanel = nil end end)
+		elseif res.Reason then
+			toast(res.Reason, C.Subtext)
+		end
+	end
+end)
+
+local dailyShown = false
+local function maybeShowDaily()
+	if dailyShown or inMatch then return end
+	local ok, data = pcall(function() return GetLobbyData:InvokeServer() end)
+	if ok and typeof(data) == "table" and typeof(data.Daily) == "table" and data.Daily.CanClaim then
+		dailyShown = true
+		dailyState = data.Daily
+		renderDaily()
+		showModal(dailyDim)
+	end
+end
+player:GetAttributeChangedSignal("DailyReady"):Connect(function()
+	if player:GetAttribute("DailyReady") == true then maybeShowDaily() end
+end)
+
 refreshProfile()
 refreshCards()
 showHero(viewedHero)
+syncProgress()
+if player:GetAttribute("DailyReady") == true then task.defer(maybeShowDaily) end
 if player:GetAttribute("Hero") then profile.SelectedHero = player:GetAttribute("Hero"); refreshProfile(); refreshCards() end
 applyLighting(MapConfig.LobbyLighting)

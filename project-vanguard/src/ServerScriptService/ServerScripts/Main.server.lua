@@ -12,6 +12,7 @@ local LobbyDisplayService = require(ServerModules.LobbyDisplayService)
 local AbilityService = require(ServerModules.AbilityService)
 local ObjectiveService = require(ServerModules.ObjectiveService)
 local RankedService = require(ServerModules.RankedService)
+local ProgressionService = require(ServerModules.ProgressionService)
 
 MapService.Init()
 MatchManager.Init()
@@ -21,8 +22,9 @@ CombatService.Init()   -- registers its OnSpawned hook before characters load
 AbilityService.Init()  -- hooks into combat (buffs, ult charge) and character spawns
 ObjectiveService.Init() -- Hold the Core (Casual + Ranked)
 RankedService.Init()    -- saved rank, season, match history, leaderboard
+ProgressionService.Init() -- tokens, hero unlocks (tokens + Robux), daily streak, lifetime stats
 DummyService.Init()
 LobbyDisplayService.Init()
 CharacterService.Init() -- loads characters last (auto-respawn is off)
 
-print("[PROJECT VANGUARD] Server ready - Phase 4")
+print("[PROJECT VANGUARD] Server ready - Phase 5")

@@ -14,7 +14,8 @@
 --   * leaving a live ranked match = immediate loss + LeavePenalty
 --   * abandoned/empty matches change nothing
 --
--- Phase 5 will add tokens/progression to the same saved record (Data.Progress).
+-- The same saved record also holds Data.Progress (tokens, heroes, stats, daily streak, Robux receipts);
+-- ProgressionService reads and changes it through GetData / MarkDirty / SaveNow below.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
@@ -22,6 +23,7 @@ local RunService = game:GetService("RunService")
 
 local GameConfig = require(ReplicatedStorage.Modules.GameConfig)
 local RankConfig = require(ReplicatedStorage.Modules.RankConfig)
+local HeroConfig = require(ReplicatedStorage.Modules.HeroConfig)
 local MatchManager = require(script.Parent.MatchManager)
 
 local Cfg = GameConfig.Ranked
@@ -37,10 +39,17 @@ local boardStore = DataStoreService:GetOrderedDataStore(PREFIX .. "VG_RankedBoar
 
 type HistoryEntry = { T: number, Mode: string, Map: string, Result: string, K: number, D: number, A: number, Delta: number? }
 type RankedData = { Season: number, Rating: number, Peak: number, Wins: number, Losses: number, Draws: number, Played: number, PastSeasons: { any } }
-type PlayerData = { Version: number, Ranked: RankedData, History: { HistoryEntry }, Lock: { Job: string, Time: number }? }
+type ProgressData = {
+	Tokens: number, Unlocked: { [string]: boolean }, Selected: string,
+	Stats: { Kills: number, Deaths: number, Assists: number, Matches: number, Wins: number, Losses: number, TokensEarned: number },
+	Daily: { LastDay: number, Streak: number },
+	RobuxSpent: number, Receipts: { [string]: number },
+}
+type PlayerData = { Version: number, Ranked: RankedData, Progress: ProgressData, History: { HistoryEntry }, Lock: { Job: string, Time: number }? }
 type Profile = { Data: PlayerData, Usable: boolean, Dirty: boolean }
 
 local profiles: { [Player]: Profile } = {}
+local loadedListeners: { (Player, any) -> () } = {}
 
 local RankedService = {}
 
@@ -49,6 +58,7 @@ local function newData(): PlayerData
 	return {
 		Version = DATA_VERSION,
 		Ranked = { Season = Cfg.Season, Rating = Cfg.StartRating, Peak = Cfg.StartRating, Wins = 0, Losses = 0, Draws = 0, Played = 0, PastSeasons = {} },
+		Progress = nil :: any, -- filled by reconcile
 		History = {},
 		Lock = nil,
 	}
@@ -76,6 +86,23 @@ local function reconcile(data: any): PlayerData
 		r.Season = Cfg.Season
 	end
 	data.Ranked = r
+
+	local pr = typeof(data.Progress) == "table" and data.Progress or {}
+	pr.Tokens = math.max(0, math.floor(tonumber(pr.Tokens) or GameConfig.Progression.StartingTokens))
+	pr.Unlocked = typeof(pr.Unlocked) == "table" and pr.Unlocked or {}
+	for _, id in ipairs(HeroConfig.StarterHeroes) do pr.Unlocked[id] = true end -- starters are always owned
+	for id in pairs(pr.Unlocked) do
+		if not HeroConfig.Heroes[id] then pr.Unlocked[id] = nil end -- removed heroes
+	end
+	pr.Selected = (typeof(pr.Selected) == "string" and pr.Unlocked[pr.Selected]) and pr.Selected or HeroConfig.StarterHeroes[1]
+	local st = typeof(pr.Stats) == "table" and pr.Stats or {}
+	for _, k in ipairs({ "Kills", "Deaths", "Assists", "Matches", "Wins", "Losses", "TokensEarned" }) do st[k] = tonumber(st[k]) or 0 end
+	pr.Stats = st
+	local daily = typeof(pr.Daily) == "table" and pr.Daily or {}
+	pr.Daily = { LastDay = tonumber(daily.LastDay) or 0, Streak = tonumber(daily.Streak) or 0 }
+	pr.RobuxSpent = tonumber(pr.RobuxSpent) or 0
+	pr.Receipts = typeof(pr.Receipts) == "table" and pr.Receipts or {}
+	data.Progress = pr
 	return data
 end
 
@@ -135,6 +162,7 @@ local function load(player: Player)
 			profile.Data = reconcile(result)
 			profile.Usable = true
 			publish(player)
+			for _, fn in ipairs(loadedListeners) do task.spawn(fn, player, profile.Data) end
 			return
 		end
 		if not ok then break end
@@ -145,9 +173,9 @@ local function load(player: Player)
 	Remotes.Notify:FireClient(player, "Your ranked data couldn't load. Ranked is unavailable this session.")
 end
 
-local function save(player: Player, release: boolean)
+local function save(player: Player, release: boolean): boolean
 	local profile = profiles[player]
-	if not profile or not profile.Usable then return end
+	if not profile or not profile.Usable then return false end
 	local snapshot = profile.Data
 	local ok, err = withRetry(function()
 		return dataStore:UpdateAsync(key(player), function(old)
@@ -170,6 +198,7 @@ local function save(player: Player, release: boolean)
 	if ok and snapshot.Ranked.Played > 0 then
 		pcall(function() boardStore:SetAsync(tostring(player.UserId), math.floor(snapshot.Ranked.Rating)) end)
 	end
+	return ok
 end
 
 ---------------------------------------------------------------- results
@@ -323,6 +352,30 @@ end
 function RankedService.IsReady(player: Player): boolean
 	local p = profiles[player]
 	return p ~= nil and p.Usable
+end
+
+-- Saved record access for other services (nil until loaded, or if loading failed).
+function RankedService.GetData(player: Player): PlayerData?
+	local p = profiles[player]
+	return (p and p.Usable) and p.Data or nil
+end
+
+function RankedService.MarkDirty(player: Player)
+	local p = profiles[player]
+	if p then p.Dirty = true end
+end
+
+-- Saves immediately (yields). Returns true when the write succeeded. Used for Robux receipts.
+function RankedService.SaveNow(player: Player): boolean
+	return save(player, false)
+end
+
+-- fn(player, data) after a player's record has loaded successfully
+function RankedService.OnLoaded(fn: (Player, any) -> ())
+	table.insert(loadedListeners, fn)
+	for p, prof in pairs(profiles) do
+		if prof.Usable then task.spawn(fn, p, prof.Data) end
+	end
 end
 
 function RankedService.GetHistory(player: Player): { HistoryEntry }

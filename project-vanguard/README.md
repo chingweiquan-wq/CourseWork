@@ -11,11 +11,17 @@ The live game lives in Studio (place 90633802455621); models, maps and UI are no
 | 3 Abilities (Dash / Skill / Ultimate for 6 heroes) | Done |
 | Visual pass (darker lighting, 3D weapons, helmets, lobby statues) | Done |
 | 4 Game modes: Hold the Core, ranked (saved, 7 tiers), match history, MVP results | Done |
-| 5 Progression (tokens, unlocks) | Not started |
+| 5 Progression: tokens, hero unlocks (tokens + Robux), daily 7-day streak, Isaac shop, saving | Done |
+| 6 Cosmetics (weapon skins, Robux) | Not started |
 
 ## Ranked
 - Saved in DataStore `VG_PlayerData` (Studio uses `STUDIO_` stores). Start 450 RP (Silver II), 100 RP per division.
 - Bronze/Silver/Gold/Platinum/Diamond have III-II-I; Master 1500+, Vanguard 1800+. Tunables in `GameConfig.Ranked`.
+
+## Tokens
+- Finish +40, win +30, MVP +10, ranked x1.25. No tokens for abandoned matches or AFK players (active < 30% of the match).
+- Daily streak: 50, 75, 100, 125, 150, 200, 300 (resets at 00:00 UTC = 8am Malaysia time).
+- Robux hero purchases: put developer product IDs in `ReplicatedStorage/Modules/ProductConfig.lua`.
 
 ## Layout
 `src/` mirrors the Studio tree:
