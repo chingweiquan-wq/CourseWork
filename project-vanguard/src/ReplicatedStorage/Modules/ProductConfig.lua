@@ -10,6 +10,9 @@ ProductConfig.HeroProducts = {
 	Titan = 0,
 	Shade = 0,
 	Volt = 0,
+	Jeric = 0,
+	Forge = 0,
+	Echo = 0,
 }
 
 ProductConfig.SkinProducts = {

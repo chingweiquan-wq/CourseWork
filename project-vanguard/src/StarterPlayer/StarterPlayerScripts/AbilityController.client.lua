@@ -365,6 +365,15 @@ AbilityFx.OnClientEvent:Connect(function(data)
 			Debris:AddItem(streak, 0.3)
 		end
 		if data.Owner == player.UserId then fovPunch(14) end
+	elseif data.Type == "Beam" and typeof(data.From) == "Vector3" and typeof(data.To) == "Vector3" then
+		-- Forge's turrets: short neon tracer
+		local dist = (data.To - data.From).Magnitude
+		if dist > 0.5 then
+			local w = typeof(data.Width) == "number" and data.Width or 0.18
+			local beam = fxPart(Enum.PartType.Block, Vector3.new(w, w, dist), CFrame.lookAt((data.From + data.To) / 2, data.To), color)
+			TweenService:Create(beam, TweenInfo.new(0.12), { Transparency = 1 }):Play()
+			Debris:AddItem(beam, 0.15)
+		end
 	elseif data.Type == "Puff" then
 		burst(data.Position, 4, color, 0.4, Enum.Material.ForceField)
 	elseif data.Type == "UltCast" then

@@ -94,8 +94,51 @@ HeroConfig.Heroes = {
 				Range = 50, Radius = 20, Duration = 6, DamagePerSecond = 28, SlowMult = 0.7 },
 		},
 	},
+	-- Heroes 7-9 (models: Roblox Studio AI mesh generation)
+	Jeric = {
+		Id = "Jeric", DisplayName = "JERIC", Role = "Duelist", Weapon = "Scattergun", WeaponId = "Scattergun", Color = Color3.fromRGB(255, 60, 70),
+		Description = "Close-range brawler who wins head-on fights.", Price = 2000,
+		Stats = { Health = 250, WalkSpeed = 18 },
+		Abilities = {
+			Primary = { Name = "Scatter Blast", Text = "8-pellet shotgun blast. Deadly up close." },
+			Dash = { Name = "Lunge", Text = "Explosive forward lunge to close the gap.", Icon = "Jeric_Dash", Cooldown = 6,
+				Movement = { Type = "Dash", Dir = "Look", Speed = 95, Time = 0.18 } },
+			Skill = { Name = "Adrenal Surge", Text = "Instantly heal and gain a burst of speed.", Icon = "Jeric_Skill", Cooldown = 12,
+				Heal = 60, SpeedAdd = 5, Duration = 3 },
+			Ultimate = { Name = "Last Stand", Text = "More damage, faster shots and constant healing.", Icon = "Jeric_Ult", Charge = 2000,
+				Duration = 7, DamageMult = 1.3, FireRateMult = 1.3, HealPerSecond = 22 },
+		},
+	},
+	Forge = {
+		Id = "Forge", DisplayName = "FORGE", Role = "Engineer", Weapon = "Rivet Gun", WeaponId = "RivetGun", Color = Color3.fromRGB(60, 140, 255),
+		Description = "Builds turrets that lock down an area.", Price = 2000,
+		Stats = { Health = 225, WalkSpeed = 16 },
+		Abilities = {
+			Primary = { Name = "Rivet Spray", Text = "Rapid-fire hot rivets." },
+			Dash = { Name = "Thruster Hop", Text = "Boost in your movement direction.", Icon = "Forge_Dash", Cooldown = 7,
+				Movement = { Type = "Dash", Dir = "Move", Speed = 70, Time = 0.25 } },
+			Skill = { Name = "Sentry Turret", Text = "Deploys a turret that shoots nearby enemies.", Icon = "Forge_Skill", Cooldown = 16,
+				Range = 30, Duration = 12, TargetRange = 45, Damage = 8, Interval = 0.4 },
+			Ultimate = { Name = "Siege Sentry", Text = "Huge turret with a fast, heavy cannon.", Icon = "Forge_Ult", Charge = 2100,
+				Range = 30, Duration = 10, TargetRange = 65, Damage = 16, Interval = 0.25 },
+		},
+	},
+	Echo = {
+		Id = "Echo", DisplayName = "ECHO", Role = "Recon", Weapon = "Pulse SMG", WeaponId = "PulseSMG", Color = Color3.fromRGB(255, 80, 190),
+		Description = "Fast scout who reveals enemies to the team.", Price = 2000,
+		Stats = { Health = 175, WalkSpeed = 20 },
+		Abilities = {
+			Primary = { Name = "Pulse Spray", Text = "Fast automatic fire." },
+			Dash = { Name = "Zip Line", Text = "Long, fast dash where you look.", Icon = "Echo_Dash", Cooldown = 6,
+				Movement = { Type = "Dash", Dir = "Look", Speed = 110, Time = 0.22 } },
+			Skill = { Name = "Sonar Pulse", Text = "Reveals every enemy around you to your team.", Icon = "Echo_Skill", Cooldown = 12,
+				Radius = 45, RevealTime = 4 },
+			Ultimate = { Name = "Resonance", Text = "Sonic waves that hurt, slow and reveal enemies.", Icon = "Echo_Ult", Charge = 2000,
+				Pulses = 4, Interval = 0.8, Radius = 22, Damage = 28, SlowMult = 0.65, SlowTime = 1.2 },
+		},
+	},
 }
-HeroConfig.HeroOrder = { "Rift", "Vex", "Titan", "Solace", "Shade", "Volt" }
+HeroConfig.HeroOrder = { "Rift", "Vex", "Titan", "Solace", "Shade", "Volt", "Jeric", "Forge", "Echo" }
 HeroConfig.AbilitySlots = { "Dash", "Skill", "Ultimate" }
 
 return HeroConfig

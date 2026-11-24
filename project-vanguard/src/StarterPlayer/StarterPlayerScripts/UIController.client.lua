@@ -281,7 +281,7 @@ local function heroPortrait(parent: Instance, heroId: string, size: UDim2, pos: 
 end
 
 local grid = Instance.new("Frame"); grid.Name = "Grid"; grid.BackgroundTransparency = 1; grid.Size = UDim2.fromScale(0.55, 1); grid.Parent = charBody
-local gl = Instance.new("UIGridLayout"); gl.CellSize = UDim2.fromScale(0.315, 0.475); gl.CellPadding = UDim2.fromScale(0.025, 0.05); gl.SortOrder = Enum.SortOrder.LayoutOrder; gl.Parent = grid
+local gl = Instance.new("UIGridLayout"); gl.CellSize = UDim2.fromScale(0.315, 0.31); gl.CellPadding = UDim2.fromScale(0.025, 0.035); gl.SortOrder = Enum.SortOrder.LayoutOrder; gl.Parent = grid -- 3x3 for 9 heroes
 
 local detail = UI.Panel({ Parent = charBody, Name = "Detail", Size = UDim2.fromScale(0.43, 1), Position = UDim2.fromScale(0.57, 0), Color = C.Panel, Stroke = C.Magenta })
 local dName = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.1), Position = UDim2.fromScale(0.05, 0.03), AlignX = Enum.TextXAlignment.Left, MaxSize = 36, Rich = true })
@@ -369,16 +369,16 @@ for i, id in ipairs(HeroConfig.HeroOrder) do
 	card.ClipsDescendants = true
 	local pad = card:FindFirstChildOfClass("UIPadding"); if pad then pad:Destroy() end -- full-bleed portrait
 	-- role-coloured backdrop + 3D statue portrait
-	local back = UI.Panel({ Parent = card, Name = "Backdrop", Size = UDim2.fromScale(1, 0.64), Color = h.Color, Transparency = 0.55, Corner = 6 })
+	local back = UI.Panel({ Parent = card, Name = "Backdrop", Size = UDim2.fromScale(1, 0.6), Color = h.Color, Transparency = 0.55, Corner = 6 })
 	back.Active = false
 	local grad = Instance.new("UIGradient")
 	grad.Rotation = 90
 	grad.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 0.9) })
 	grad.Parent = back
-	heroPortrait(card, id, UDim2.fromScale(1, 0.64), UDim2.fromScale(0, 0), 14)
-	UI.Label({ Parent = card, Text = h.DisplayName, Font = UI.Fonts.Title, Color = h.Color, Size = UDim2.fromScale(0.9, 0.14), Position = UDim2.fromScale(0.05, 0.645), MaxSize = 22 })
-	UI.Label({ Parent = card, Text = string.upper(h.Role), Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.9, 0.09), Position = UDim2.fromScale(0.05, 0.785), MaxSize = 14 })
-	local status = UI.Label({ Parent = card, Name = "Sub", Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.1), Position = UDim2.fromScale(0.05, 0.88), MaxSize = 14 })
+	heroPortrait(card, id, UDim2.fromScale(1, 0.6), UDim2.fromScale(0, 0), 13)
+	UI.Label({ Parent = card, Text = h.DisplayName, Font = UI.Fonts.Title, Color = h.Color, Size = UDim2.fromScale(0.9, 0.16), Position = UDim2.fromScale(0.05, 0.605), MaxSize = 22 })
+	UI.Label({ Parent = card, Text = string.upper(h.Role), Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.9, 0.11), Position = UDim2.fromScale(0.05, 0.765), MaxSize = 14 })
+	local status = UI.Label({ Parent = card, Name = "Sub", Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.12), Position = UDim2.fromScale(0.05, 0.875), MaxSize = 14 })
 	cardRefs[id] = { Card = card, Stroke = card:FindFirstChildOfClass("UIStroke"), Status = status }
 	card.MouseButton1Click:Connect(function() showHero(id) end)
 end

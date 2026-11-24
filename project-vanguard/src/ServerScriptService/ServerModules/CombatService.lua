@@ -369,6 +369,40 @@ local function doHitscan(player: Player, character: Model, w: any, origin: Vecto
 	matchPlayersFx(matchId, { Type = "Shot", Shooter = player.UserId, Weapon = w.Id, From = origin, To = endPoint })
 end
 
+---------------------------------------------------------------- pellets (Jeric's Scattergun)
+-- Every pellet is the server's own ray along the shared fixed pattern; damage is summed per target so a
+-- point-blank blast is one hit (one hit marker / kill credit), not eight.
+local function doPellets(player: Player, character: Model, w: any, origin: Vector3, dir: Vector3, matchId: string)
+	local params = geometryParams(shotExclusions(player, character))
+	local dmgMult = mods(player).DamageMult
+	local totals: { [Model]: { C: Combatant, Dmg: number, Head: boolean } } = {}
+	local tos = {}
+	for _, d in ipairs(WeaponConfig.PelletDirs(dir, w)) do
+		local result = workspace:Raycast(origin, d * w.Range, params)
+		local to = origin + d * w.Range
+		if result then
+			to = result.Position
+			if isEnemyShield(player, result.Instance) then
+				CombatService.DamageShield(player, result.Instance :: BasePart, w.Damage * dmgMult)
+			else
+				local c = CombatService.GetCombatant(result.Instance)
+				if c and CombatService.IsEnemy(player, c) and c.Humanoid.Health > 0 then
+					local head = isHeadPart(result.Instance :: BasePart) and w.HeadshotMultiplier > 1
+					local t = totals[c.Model] or { C = c, Dmg = 0, Head = false }
+					t.Dmg += w.Damage * (head and w.HeadshotMultiplier or 1) * dmgMult
+					t.Head = t.Head or head
+					totals[c.Model] = t
+				end
+			end
+		end
+		table.insert(tos, to)
+	end
+	for _, t in pairs(totals) do
+		CombatService.ApplyDamage(player, t.C, t.Dmg, w.DisplayName, t.Head)
+	end
+	matchPlayersFx(matchId, { Type = "Shot", Shooter = player.UserId, Weapon = w.Id, From = origin, To = tos[1], Pellets = tos })
+end
+
 ---------------------------------------------------------------- melee
 local function doMelee(player: Player, character: Model, w: any, dir: Vector3, matchId: string)
 	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -553,23 +587,38 @@ function CombatService.BotAttack(bot: any, w: any, origin: Vector3, dir: Vector3
 	if ff then ff:Destroy() end -- attacking ends spawn protection, same as players
 	local fx = { Shooter = 0, Weapon = w.Id, From = origin }
 	if w.Type == "Hitscan" then
-		local result = workspace:Raycast(origin, dir * w.Range, geometryParams(botExclusions(bot)))
-		local endPoint = origin + dir * w.Range
-		if result then
-			endPoint = result.Position
-			if botShieldIsEnemy(bot, result.Instance) then
-				local hp = (result.Instance:GetAttribute("ShieldHealth") :: number? or 0) - w.Damage
-				result.Instance:SetAttribute("ShieldHealth", hp)
-				if hp <= 0 then result.Instance:Destroy() end
-			else
-				local c = CombatService.GetCombatant(result.Instance)
-				if c and botIsEnemy(bot, c) and c.Humanoid.Health > 0 then
-					local headshot = isHeadPart(result.Instance :: BasePart) and w.HeadshotMultiplier > 1
-					CombatService.ApplyBotDamage(bot, c, w.Damage * (headshot and w.HeadshotMultiplier or 1), w.DisplayName, headshot)
+		-- one ray for normal guns, the fixed pellet pattern for shotguns (damage summed per target)
+		local params = geometryParams(botExclusions(bot))
+		local dirs = if w.Pellets then WeaponConfig.PelletDirs(dir, w) else { dir }
+		local totals: { [Model]: { C: Combatant, Dmg: number, Head: boolean } } = {}
+		local tos = {}
+		for _, d in ipairs(dirs) do
+			local result = workspace:Raycast(origin, d * w.Range, params)
+			local endPoint = origin + d * w.Range
+			if result then
+				endPoint = result.Position
+				if botShieldIsEnemy(bot, result.Instance) then
+					local hp = (result.Instance:GetAttribute("ShieldHealth") :: number? or 0) - w.Damage
+					result.Instance:SetAttribute("ShieldHealth", hp)
+					if hp <= 0 then result.Instance:Destroy() end
+				else
+					local c = CombatService.GetCombatant(result.Instance)
+					if c and botIsEnemy(bot, c) and c.Humanoid.Health > 0 then
+						local headshot = isHeadPart(result.Instance :: BasePart) and w.HeadshotMultiplier > 1
+						local t = totals[c.Model] or { C = c, Dmg = 0, Head = false }
+						t.Dmg += w.Damage * (headshot and w.HeadshotMultiplier or 1)
+						t.Head = t.Head or headshot
+						totals[c.Model] = t
+					end
 				end
 			end
+			table.insert(tos, endPoint)
 		end
-		fx.Type = "Shot"; fx.To = endPoint
+		for _, t in pairs(totals) do
+			CombatService.ApplyBotDamage(bot, t.C, t.Dmg, w.DisplayName, t.Head)
+		end
+		fx.Type = "Shot"; fx.To = tos[1]
+		if w.Pellets then fx.Pellets = tos end
 		matchPlayersFx(bot.MatchId, fx)
 	elseif w.Type == "Projectile" then
 		projectileId += 1
@@ -630,7 +679,9 @@ local function onFire(player: Player, origin: any, direction: any, claimedPart: 
 	if ff then ff:Destroy() end
 	for _, fn in ipairs(attackListeners) do task.spawn(fn, player) end
 
-	if w.Type == "Hitscan" then
+	if w.Type == "Hitscan" and w.Pellets then
+		doPellets(player, character, w, origin, dir, matchId :: string)
+	elseif w.Type == "Hitscan" then
 		doHitscan(player, character, w, origin, dir, claimedPart, matchId :: string)
 	elseif w.Type == "Projectile" then
 		spawnProjectile(player, character, w, origin, dir, matchId :: string)

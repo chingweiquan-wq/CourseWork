@@ -342,7 +342,16 @@ local function fireOnce(): boolean
 	local muzzle = muzzlePosition()
 	local tcol = tracerColorFor(player.UserId, w)
 
-	if w.Type == "Hitscan" then
+	if w.Type == "Hitscan" and w.Pellets then
+		-- shotgun: draw the same fixed pellet pattern the server uses; the server decides the hits
+		for _, d in ipairs(WeaponConfig.PelletDirs(dir, w)) do
+			local result = workspace:Raycast(origin, d * w.Range, clientParams())
+			local to = result and result.Position or origin + d * w.Range
+			tracer(muzzle, to, tcol, 0.05)
+			if result then impact(to, tcol, 0) end
+		end
+		FireRemote:FireServer(origin, dir)
+	elseif w.Type == "Hitscan" then
 		local result = workspace:Raycast(origin, dir * w.Range, clientParams())
 		local to = result and result.Position or origin + dir * w.Range
 		tracer(muzzle, to, tcol, w.Damage >= 50 and 0.14 or 0.06)
@@ -360,7 +369,7 @@ local function fireOnce(): boolean
 	Sfx.Play("Fire_" .. w.Id)
 
 	-- recoil: viewmodel kick + small camera kick (bigger for heavy single shots)
-	local kick = (w.Damage >= 50) and 1.6 or (w.Type == "Melee" and 0 or 0.35)
+	local kick = (w.Damage >= 50 or w.Pellets) and 1.6 or (w.Type == "Melee" and 0 or 0.35)
 	recoil = math.min(recoil + (w.Type == "Melee" and 1 or 0.6), 2)
 	if kick > 0 then
 		cam.CFrame = cam.CFrame * CFrame.Angles(math.rad(kick), 0, 0)
@@ -462,7 +471,14 @@ CombatFx.OnClientEvent:Connect(function(data)
 	if not w then return end
 	local mine = data.Shooter == player.UserId
 	local tcol = tracerColorFor(data.Shooter, w)
-	if data.Type == "Shot" and not mine then
+	if data.Type == "Shot" and not mine and typeof(data.Pellets) == "table" then
+		for _, to in ipairs(data.Pellets) do
+			if typeof(to) == "Vector3" then
+				tracer(data.From, to, tcol, 0.05)
+				impact(to, tcol, 0)
+			end
+		end
+	elseif data.Type == "Shot" and not mine then
 		tracer(data.From, data.To, tcol, w.Damage >= 50 and 0.14 or 0.06)
 		impact(data.To, tcol, 0)
 	elseif data.Type == "Projectile" and not mine then

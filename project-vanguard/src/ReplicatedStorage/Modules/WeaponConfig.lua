@@ -3,6 +3,7 @@
 -- Type: "Hitscan" (instant ray), "Projectile" (server-simulated travel), "Melee" (server cone check)
 -- FireMode: "Semi" (one shot per click), "Auto" (hold), "Burst" (BurstCount shots per click)
 -- Cooldown = seconds between shots (for Burst: between bursts). Spread = cone half-angle in degrees.
+-- Pellets (Hitscan only): one shot fires Pellets rays in a FIXED pattern (see PelletDirs) so client and server agree.
 -- MagSize 0 = no ammo (melee). Skins (Phase 6) change visuals only; they never touch these numbers.
 local WeaponConfig = {}
 
@@ -46,6 +47,40 @@ WeaponConfig.Weapons = {
 		Cooldown = 0.09, MagSize = 60, ReloadTime = 1.8,
 		Color = Color3.fromRGB(255, 230, 60), TracerColor = Color3.fromRGB(255, 245, 140), ViewSize = Vector3.new(0.8, 0.8, 1.2),
 	},
+	Scattergun = {
+		Id = "Scattergun", DisplayName = "Scattergun", Type = "Hitscan", FireMode = "Semi",
+		Damage = 12, HeadshotMultiplier = 1.5, Range = 48, Spread = 0, Pellets = 8, PelletSpread = 4.5,
+		Cooldown = 0.75, MagSize = 6, ReloadTime = 2.0,
+		Color = Color3.fromRGB(255, 60, 70), TracerColor = Color3.fromRGB(255, 130, 130), ViewSize = Vector3.new(0.3, 0.4, 2.4),
+	},
+	RivetGun = {
+		Id = "RivetGun", DisplayName = "Rivet Gun", Type = "Projectile", FireMode = "Auto",
+		Damage = 15, HeadshotMultiplier = 1.5, Range = 220, Spread = 1,
+		ProjectileSpeed = 260, ProjectileSize = 0.4, SplashDamage = 0, SplashRadius = 0,
+		Cooldown = 0.15, MagSize = 32, ReloadTime = 1.8,
+		Color = Color3.fromRGB(60, 140, 255), TracerColor = Color3.fromRGB(140, 190, 255), ViewSize = Vector3.new(0.35, 0.5, 2.2),
+	},
+	PulseSMG = {
+		Id = "PulseSMG", DisplayName = "Pulse SMG", Type = "Hitscan", FireMode = "Auto",
+		Damage = 9, HeadshotMultiplier = 1.6, Range = 140, Spread = 1.6,
+		Cooldown = 0.075, MagSize = 40, ReloadTime = 1.6,
+		Color = Color3.fromRGB(255, 80, 190), TracerColor = Color3.fromRGB(255, 160, 220), ViewSize = Vector3.new(0.3, 0.4, 1.9),
+	},
 }
+
+-- Fixed shotgun pattern around `dir`: one centre pellet + a ring of (Pellets - 1) at PelletSpread degrees.
+function WeaponConfig.PelletDirs(dir: Vector3, w: any): { Vector3 }
+	local out = { dir }
+	local n = (w.Pellets or 1) - 1
+	if n <= 0 then return out end
+	local cf = CFrame.lookAt(Vector3.zero, dir)
+	local spread = math.rad(w.PelletSpread or 4)
+	for i = 1, n do
+		local a = (i / n) * math.pi * 2
+		local rot = CFrame.Angles(math.sin(a) * spread, math.cos(a) * spread, 0)
+		table.insert(out, (cf * rot).LookVector)
+	end
+	return out
+end
 
 return WeaponConfig

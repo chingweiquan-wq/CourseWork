@@ -80,3 +80,16 @@ Third-party kits included in `src/StarterGui`: Premium Health Bar, Clean Shop GU
 - Character Select rebuilt from the mockup: 3D statue portrait cards (name, role, Selected / Available / token price),
   hero sheet with "NAME - ROLE", "WEAPON - HP - SPD", description, ABILITIES rows with key badges (LMB/SHIFT/E/Q)
   and a SELECT CHARACTER / UNLOCK button. Portraits re-clone once their meshes finish loading.
+
+### Phase 9.2 - Three new heroes (Jeric, Forge, Echo)
+Models made with Roblox Studio's AI mesh generator (no ForgeGUI): statue, helmet and weapon per hero,
+stored in ReplicatedStorage.HeroAssets like the first six. All unlock for 2000 tokens (Robux once products exist).
+| Hero | Role | Weapon | Dash / Skill / Ultimate |
+|---|---|---|---|
+| JERIC | Duelist | Scattergun (8-pellet shotgun, 250 HP) | Lunge / Adrenal Surge (heal + speed) / Last Stand (dmg, fire rate, regen) |
+| FORGE | Engineer | Rivet Gun (auto projectile, 225 HP) | Thruster Hop / Sentry Turret / Siege Sentry |
+| ECHO | Recon | Pulse SMG (fast auto, 175 HP, speed 20) | Zip Line / Sonar Pulse (team reveal) / Resonance (4 damaging, slowing pulses) |
+- Shotgun pellets use a fixed shared pattern (WeaponConfig.PelletDirs); the server casts every pellet itself and sums damage per target. Bots use the same code.
+- Turrets: server objects that shoot the nearest visible enemy; walls block them; one of each type per Forge.
+- Character Select is now a 3x3 grid; lobby showcase has 9 statues.
+- Ability icons are drawn in assets/icons; until they are uploaded, IconConfig borrows the closest existing icons.
