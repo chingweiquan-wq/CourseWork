@@ -127,4 +127,17 @@ function GameConfig.GetMinPlayers(modeId: string): number
 	return mode.MinPlayers
 end
 
+-- Phase 8: lobby leaderboards (Hall of Fame wall beside the Ranked board)
+GameConfig.Leaderboards = {
+	RefreshSeconds = 300, -- write changed scores + read the top lists every 5 minutes (light on DataStore budgets)
+	Show = 25,            -- rows on each board (auto-scrolling)
+	Fetch = 100,          -- how deep we read, so players up to #100 see their exact rank
+	FirstRefreshDelay = 8,
+	Boards = {
+		Kills = { Title = "MOST KILLS", Icon = "Trophy", Color = Color3.fromRGB(255, 210, 60), Unit = "kills", Store = "VG_Board_Kills" },
+		Robux = { Title = "TOP SUPPORTERS", Icon = "Gem", Color = Color3.fromRGB(90, 255, 140), Unit = "R$", Store = "VG_Board_Robux" },
+	},
+	BoardOrder = { "Kills", "Robux" },
+}
+
 return GameConfig

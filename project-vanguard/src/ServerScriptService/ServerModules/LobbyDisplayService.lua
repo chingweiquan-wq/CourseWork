@@ -3,7 +3,8 @@
 --  * Queue pads (Workspace.Lobby.QueuePads, attribute QueueMode): stand on a pad to join that queue,
 --    step off to leave it (only if you joined via the pad). Same server-validated Matchmaking as the PLAY menu.
 --  * Floating pad screens + the big mode board above the pads show live "players / max" and countdowns.
---  * Leaderboard signs get headers with icons (rows are filled by LeaderboardService in Phase 8).
+--  * Leaderboard signs get headers with icons. Ranked rows: RankedService. Kills / Robux: LeaderboardService
+--    sends the lists and LeaderboardController draws them on each client (Phase 8).
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -126,7 +127,7 @@ local function buildModeBoard(board: BasePart)
 	end
 end
 
-local function buildSign(sign: BasePart, iconName: string, title: string, color: Color3)
+local function buildSign(sign: BasePart, iconName: string, title: string, color: Color3, withRows: boolean?)
 	local gui = Instance.new("SurfaceGui")
 	gui.Name = "BoardGui"
 	gui.Face = faceToward(sign, Vector3.new(0, sign.Position.Y, 0))
@@ -140,6 +141,11 @@ local function buildSign(sign: BasePart, iconName: string, title: string, color:
 	bg.Parent = gui
 	icon(bg, iconName, UDim2.fromScale(0.3, 0.22), UDim2.fromScale(0.03, 0.01))
 	label(bg, title, UDim2.fromScale(0.64, 0.16), UDim2.fromScale(0.34, 0.04), color)
+	if withRows == false then
+		-- Phase 8 boards: each client draws the scrolling top-25 list + its own rank line over this area
+		-- (LeaderboardController), so the server only builds the frame and header.
+		return
+	end
 	local rows = Instance.new("Frame")
 	rows.Name = "Rows"
 	rows.BackgroundTransparency = 1
@@ -242,19 +248,16 @@ function LobbyDisplayService.Init()
 		clearDecals(board)
 		buildModeBoard(board:FindFirstChild("Board") :: BasePart)
 	end
-	local kills = L:FindFirstChild("WhatsNewSign")
-	if kills then
-		clearDecals(kills)
-		local s = kills:FindFirstChild("Sign") :: BasePart
-		s.Name = "KillsBoard"
-		buildSign(s, "Trophy", "MOST KILLS", Color3.fromRGB(255, 210, 60))
-	end
-	local robux = L:FindFirstChild("HowToSign")
-	if robux then
-		clearDecals(robux)
-		local s = robux:FindFirstChild("Sign") :: BasePart
-		s.Name = "RobuxBoard"
-		buildSign(s, "Gem", "TOP SUPPORTERS", Color3.fromRGB(90, 255, 140))
+	-- Phase 8: Hall of Fame - MOST KILLS and TOP SUPPORTERS stand either side of the Ranked board
+	for _, id in ipairs(GameConfig.Leaderboards.BoardOrder) do
+		local b = GameConfig.Leaderboards.Boards[id]
+		local model = L:FindFirstChild(id .. "Sign")
+		local s = model and model:FindFirstChild("Sign") :: BasePart?
+		if s then
+			clearDecals(model)
+			s.Name = id .. "Board" -- KillsBoard / RobuxBoard
+			buildSign(s, b.Icon, b.Title, b.Color, false)
+		end
 	end
 	local join = L:FindFirstChild("JoinGameSign")
 	if join then

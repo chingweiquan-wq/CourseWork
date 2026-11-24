@@ -3,6 +3,7 @@
 --  * Stored in Data.Progress.Settings { Music, Sfx, Announcer } (RankedService record, numbers 0..1).
 --  * Published as attributes VolMusic / VolSfx / VolAnnouncer so the client applies them on join.
 --  * SaveSettings (RemoteFunction) validates every value (type, NaN, range) and is rate-limited.
+--  * Phase 8: HideSpending (boolean) hides the player's name on the TOP SUPPORTERS board.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
@@ -19,6 +20,7 @@ local lastSave: { [Player]: number } = {}
 
 local function publish(player: Player, s: { [string]: number })
 	for _, k in ipairs(KINDS) do player:SetAttribute("Vol" .. k, s[k]) end
+	player:SetAttribute("HideSpending", s.HideSpending == 1) -- LeaderboardService reacts to this
 end
 
 local function clean(v: any, default: number): number
@@ -42,6 +44,7 @@ function SettingsService.Init()
 		for _, k in ipairs(KINDS) do
 			if req[k] ~= nil then s[k] = clean(req[k], s[k]) end
 		end
+		if typeof(req.HideSpending) == "boolean" then s.HideSpending = req.HideSpending and 1 or 0 end
 		publish(player, s)
 		RankedService.MarkDirty(player)
 		return { Ok = true }

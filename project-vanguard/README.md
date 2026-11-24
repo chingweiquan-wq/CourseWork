@@ -14,7 +14,8 @@ The live game lives in Studio (place 90633802455621); models, maps and UI are no
 | 5 Progression: tokens, hero unlocks (tokens + Robux), daily 7-day streak, Isaac shop, saving | Done |
 | 6 Cosmetics: 12 weapon skins (Arctic / Royal Gold / Void), inventory, shop SKINS tab, Robux skin purchases | Done |
 | 7 Audio & polish: music, TTS announcer + kill streaks, SFX, animations, UI transitions, neon VFX, saved volume settings | Done |
-| 8 Leaderboards | Not started |
+| 8 Leaderboards: MOST KILLS + TOP SUPPORTERS (persistent, top 25, podium avatars, privacy opt-out) | Done |
+| 9 Testing & optimization | Not started |
 
 ## Ranked
 - Saved in DataStore `VG_PlayerData` (Studio uses `STUDIO_` stores). Start 450 RP (Silver II), 100 RP per division.
@@ -38,6 +39,14 @@ The live game lives in Studio (place 90633802455621); models, maps and UI are no
 - VFX: neon low-poly shard muzzle flashes/impacts, digital-dissolve deaths in team colour, viewmodel equip/reload/cast motion.
 - UI: button hover/click sounds + bounce, modal fade in/out, deploy/return scanline wipe.
 - Settings (dock): Music / SFX / Announcer sliders, saved in the profile (`Progress.Settings`), validated server-side. Tunables in `AudioConfig`.
+
+## Leaderboards (Phase 8)
+- Hall of Fame wall: MOST KILLS and TOP SUPPORTERS stand either side of the Ranked board (models `KillsSign` / `RobuxSign`; the old far-wall signs are parked in `ServerStorage.UnusedLobby`).
+- OrderedDataStores `VG_Board_Kills` / `VG_Board_Robux` (Studio uses `STUDIO_`). Every 5 min: write changed scores, read top 100, show top 25 (auto-scroll), exact "YOU #n" line up to #100.
+- Kills = real players only (`Progress.Stats.PlayerKills`, counted at the elimination). Robux = `Progress.RobuxSpent`, only increased by granted ProcessReceipt purchases.
+- Privacy: Settings > "TOP SUPPORTERS: HIDDEN" shows you as Anonymous (hologram on the podium). Stored as `spent*2 + hidden`, no extra reads.
+- Top 3 of each board stand on top of it as animated avatars. Tunables: `GameConfig.Leaderboards`.
+- Studio-only QA hook `ServerStorage.VG_LeaderboardTest` (AddKills / AddRobux / Refresh) - not created on live servers.
 
 ## Layout
 `src/` mirrors the Studio tree:

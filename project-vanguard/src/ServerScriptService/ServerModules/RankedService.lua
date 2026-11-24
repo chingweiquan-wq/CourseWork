@@ -43,7 +43,7 @@ type HistoryEntry = { T: number, Mode: string, Map: string, Result: string, K: n
 type RankedData = { Season: number, Rating: number, Peak: number, Wins: number, Losses: number, Draws: number, Played: number, PastSeasons: { any } }
 type ProgressData = {
 	Tokens: number, Unlocked: { [string]: boolean }, Selected: string,
-	Stats: { Kills: number, Deaths: number, Assists: number, Matches: number, Wins: number, Losses: number, TokensEarned: number },
+	Stats: { Kills: number, PlayerKills: number, Deaths: number, Assists: number, Matches: number, Wins: number, Losses: number, TokensEarned: number },
 	Daily: { LastDay: number, Streak: number },
 	RobuxSpent: number, Receipts: { [string]: number },
 	Skins: { Owned: { [string]: boolean }, Equipped: { [string]: string } },
@@ -100,7 +100,7 @@ local function reconcile(data: any): PlayerData
 	end
 	pr.Selected = (typeof(pr.Selected) == "string" and pr.Unlocked[pr.Selected]) and pr.Selected or HeroConfig.StarterHeroes[1]
 	local st = typeof(pr.Stats) == "table" and pr.Stats or {}
-	for _, k in ipairs({ "Kills", "Deaths", "Assists", "Matches", "Wins", "Losses", "TokensEarned" }) do st[k] = tonumber(st[k]) or 0 end
+	for _, k in ipairs({ "Kills", "PlayerKills", "Deaths", "Assists", "Matches", "Wins", "Losses", "TokensEarned" }) do st[k] = tonumber(st[k]) or 0 end
 	pr.Stats = st
 	local daily = typeof(pr.Daily) == "table" and pr.Daily or {}
 	pr.Daily = { LastDay = tonumber(daily.LastDay) or 0, Streak = tonumber(daily.Streak) or 0 }
@@ -124,6 +124,7 @@ local function reconcile(data: any): PlayerData
 		local v = st[k]
 		settings[k] = (typeof(v) == "number" and v == v) and math.clamp(v, 0, 1) or default
 	end
+	settings.HideSpending = (st.HideSpending == 1) and 1 or 0 -- Phase 8: hide me on TOP SUPPORTERS
 	pr.Settings = settings
 	data.Progress = pr
 	return data

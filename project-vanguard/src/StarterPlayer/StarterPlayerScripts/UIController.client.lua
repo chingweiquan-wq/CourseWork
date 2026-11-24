@@ -780,6 +780,30 @@ local testVoice = UI.Button({ Parent = settingsBody, Name = "TestVoice", Text = 
 testVoice.MouseButton1Click:Connect(function() Sfx.Announce("Unstoppable!") end)
 UI.Label({ Parent = settingsBody, Text = "Settings save to your profile automatically.\nLobby: press G to salute.", Font = UI.Fonts.Body, Color = C.Subtext, Size = UDim2.fromScale(0.6, 0.16), Position = UDim2.fromScale(0.37, 0.6), AlignX = Enum.TextXAlignment.Left, MaxSize = 20 })
 
+-- Phase 8: hide your name on the TOP SUPPORTERS board (shown as "Anonymous")
+local privacyBtn = UI.Button({ Parent = settingsBody, Name = "PrivacyToggle", Text = "", Size = UDim2.fromScale(0.62, 0.1), Position = UDim2.fromScale(0.02, 0.82), Accent = C.Cyan, MaxSize = 22 })
+local function privacyText()
+	local hidden = player:GetAttribute("HideSpending") == true
+	local t = hidden and "TOP SUPPORTERS: HIDDEN (Anonymous)" or "TOP SUPPORTERS: NAME SHOWN"
+	privacyBtn.Text = t
+end
+privacyText()
+player:GetAttributeChangedSignal("HideSpending"):Connect(privacyText)
+local privacyBusy = false
+privacyBtn.MouseButton1Click:Connect(function()
+	if privacyBusy then return end
+	privacyBusy = true
+	local want = not (player:GetAttribute("HideSpending") == true)
+	local ok, res = pcall(function() return SaveSettings:InvokeServer({ HideSpending = want }) end)
+	if ok and typeof(res) == "table" and res.Ok then
+		toast(want and "You're now Anonymous on TOP SUPPORTERS" or "Your name is shown on TOP SUPPORTERS", C.Cyan)
+	else
+		toast("Couldn't change that right now - try again", C.Red)
+	end
+	task.wait(0.6)
+	privacyBusy = false
+end)
+
 settingsBtn.MouseButton1Click:Connect(function() showModal(settingsDim) end)
 plusBtn.MouseButton1Click:Connect(function() toast("Token packs arrive with Robux purchases (Phase 6)", C.Gold) end)
 -- Isaac's shop window uses the Clean Shop GUI kit (UI by @roary16), filled with hero offers.

@@ -42,10 +42,11 @@ local MatchManager = {}
 
 local matches: { [string]: Match } = {}
 local matchOfPlayer: { [Player]: Match } = {}
-local listeners: { [string]: { (...any) -> () } } = { Started = {}, Live = {}, Ended = {}, PlayerLeft = {} }
+local listeners: { [string]: { (...any) -> () } } = { Started = {}, Live = {}, Ended = {}, PlayerLeft = {}, PlayerKill = {} }
 
 -- Lets other services (combat, dummies, later abilities/rewards) react to match events without circular requires.
--- Events: Started(match), Live(match), Ended(match), PlayerLeft(match, player, team)
+-- Events: Started(match), Live(match), Ended(match), PlayerLeft(match, player, team),
+--         PlayerKill(match, killer, victim) - a real player eliminated another real player (leaderboards)
 function MatchManager.On(eventName: string, fn: (...any) -> ())
 	table.insert(listeners[eventName], fn)
 end
@@ -224,6 +225,7 @@ function MatchManager.RecordElimination(match: Match, killer: Player?, victim: P
 		setStatAttrs(killer, match)
 		payload.Killer = killer.DisplayName
 		payload.KillerUserId = killer.UserId
+		if victim and match.TeamOf[victim] ~= team then emit("PlayerKill", match, killer, victim) end
 		payload.KillerTeam = team
 		payload.Streak = st.Streak
 		payload.Chain = st.Chain
