@@ -25,6 +25,7 @@ local GameConfig = require(ReplicatedStorage.Modules.GameConfig)
 local RankConfig = require(ReplicatedStorage.Modules.RankConfig)
 local HeroConfig = require(ReplicatedStorage.Modules.HeroConfig)
 local SkinConfig = require(ReplicatedStorage.Modules.SkinConfig)
+local AudioConfig = require(ReplicatedStorage.Modules.AudioConfig)
 local MatchManager = require(script.Parent.MatchManager)
 
 local Cfg = GameConfig.Ranked
@@ -46,6 +47,7 @@ type ProgressData = {
 	Daily: { LastDay: number, Streak: number },
 	RobuxSpent: number, Receipts: { [string]: number },
 	Skins: { Owned: { [string]: boolean }, Equipped: { [string]: string } },
+	Settings: { [string]: number },
 }
 type PlayerData = { Version: number, Ranked: RankedData, Progress: ProgressData, History: { HistoryEntry }, Lock: { Job: string, Time: number }? }
 type Profile = { Data: PlayerData, Usable: boolean, Dirty: boolean }
@@ -115,6 +117,14 @@ local function reconcile(data: any): PlayerData
 		if not skin or skin.Weapon ~= weapon or not sk.Owned[id] then sk.Equipped[weapon] = nil end
 	end
 	pr.Skins = sk
+	-- Phase 7: saved audio volumes (0..1), validated again by SettingsService on every change
+	local st = typeof(pr.Settings) == "table" and pr.Settings or {}
+	local settings = {}
+	for k, default in pairs(AudioConfig.DefaultVolumes) do
+		local v = st[k]
+		settings[k] = (typeof(v) == "number" and v == v) and math.clamp(v, 0, 1) or default
+	end
+	pr.Settings = settings
 	data.Progress = pr
 	return data
 end

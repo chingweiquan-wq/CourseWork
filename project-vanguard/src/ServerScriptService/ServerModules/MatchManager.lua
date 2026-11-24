@@ -205,6 +205,7 @@ function MatchManager.RecordElimination(match: Match, killer: Player?, victim: P
 	}
 
 	if victim and match.Stats[victim] then
+		payload.VictimStreak = match.Streaks[victim].Streak -- for SHUTDOWN callouts (Phase 7)
 		match.Stats[victim].Deaths += 1
 		match.Streaks[victim].Streak = 0
 		match.Streaks[victim].Chain = 0

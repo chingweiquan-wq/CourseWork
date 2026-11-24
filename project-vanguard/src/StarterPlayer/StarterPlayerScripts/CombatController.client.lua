@@ -12,6 +12,7 @@ local player = Players.LocalPlayer
 local WeaponConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("WeaponConfig"))
 local SkinConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("SkinConfig"))
 local SkinVisuals = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("SkinVisuals"))
+local Sfx = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Sfx"))
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local FireRemote = Remotes:WaitForChild("Fire")
 local ReloadRemote = Remotes:WaitForChild("Reload")
@@ -30,6 +31,10 @@ local localAmmo = 0
 local recoil = 0
 local viewmodel: Model? = nil
 local viewmodelWeapon: string? = nil
+-- Phase 7 viewmodel animation state
+local equipStart = 0
+local reloadBlend = 0
+local castKick = 0
 
 local function getWeapon()
 	local id = player:GetAttribute("WeaponId")
@@ -74,11 +79,30 @@ local function tracer(from: Vector3, to: Vector3, color: Color3, width: number)
 	fade(p, 0.12)
 end
 
-local function flash(pos: Vector3, color: Color3, size: number)
-	local p = fxPart(Vector3.one * size, CFrame.new(pos), color, Enum.PartType.Ball)
+-- Phase 7: neon low-poly shards. Thin glowing blocks fly out from a point and shrink away.
+-- dir = main direction (nil = all around), spread 0..1 = how far they wander off it.
+local function shards(pos: Vector3, dir: Vector3?, color: Color3, count: number, dist: number, size: number, spread: number?)
+	for _ = 1, count do
+		local rnd = Vector3.new(math.random() * 2 - 1, math.random() * 2 - 1, math.random() * 2 - 1)
+		if rnd.Magnitude < 0.05 then rnd = Vector3.yAxis end
+		local d = dir and (dir.Unit + rnd.Unit * (spread or 0.6)) or rnd
+		d = d.Unit
+		local s = size * (0.6 + math.random() * 0.7)
+		local p = fxPart(Vector3.new(s * 0.45, s * 0.45, s * 1.8), CFrame.lookAt(pos, pos + d) * CFrame.Angles(0, 0, math.random() * 3), color)
+		local travel = dist * (0.6 + math.random() * 0.6)
+		local goal = CFrame.lookAt(pos + d * travel, pos + d * (travel + 1)) * CFrame.Angles(0, 0, math.random() * 3)
+		local t = 0.14 + math.random() * 0.12
+		TweenService:Create(p, TweenInfo.new(t, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = goal, Size = Vector3.one * 0.03, Transparency = 1 }):Play()
+		Debris:AddItem(p, t + 0.05)
+	end
+end
+
+local function flash(pos: Vector3, color: Color3, size: number, dir: Vector3?)
+	local p = fxPart(Vector3.one * size * 0.7, CFrame.new(pos) * CFrame.Angles(math.random() * 3, math.random() * 3, 0), color)
 	local light = Instance.new("PointLight")
 	light.Color = color; light.Range = 8; light.Brightness = 3; light.Parent = p
-	fade(p, 0.08)
+	fade(p, 0.07)
+	shards(pos, dir, color, 3, 1.3, size * 0.35, 0.45)
 end
 
 local function impact(pos: Vector3, color: Color3, radius: number)
@@ -86,6 +110,11 @@ local function impact(pos: Vector3, color: Color3, radius: number)
 	local p = fxPart(Vector3.one * (size * 0.3), CFrame.new(pos), color, Enum.PartType.Ball)
 	p.Transparency = radius > 0 and 0.2 or 0.4
 	fade(p, radius > 0 and 0.35 or 0.15, Vector3.one * size)
+	if radius > 0 then
+		shards(pos, nil, color, 10, radius * 1.1, 0.7)
+	else
+		shards(pos, nil, color, 4, 1.6, 0.22)
+	end
 end
 
 local function slash(origin: Vector3, dir: Vector3, color: Color3)
@@ -204,6 +233,8 @@ local function buildViewmodel(w: any)
 		m.Parent = workspace.CurrentCamera
 		viewmodel = m
 		viewmodelWeapon = w.Id
+		equipStart = os.clock()
+		Sfx.Play("Equip")
 		return
 	end
 	-- fallback: simple block weapon if the 3D model is missing
@@ -257,6 +288,17 @@ RunService.RenderStepped:Connect(function(dt)
 		local bob = hum.MoveDirection.Magnitude > 0 and math.sin(os.clock() * 9) * 0.04 or 0
 		local offset = CFrame.new(0.8, -0.62 + bob, -1.55 + recoil * 0.15) * CFrame.Angles(recoil * 0.1, math.rad(9), 0)
 		if w.Type == "Melee" then offset = CFrame.new(0.6, -0.55 + bob, -1.4) * CFrame.Angles(math.rad(-20) + recoil * 0.5, math.rad(10), 0) end
+		-- Phase 7 animation layers: equip swing-in, reload dip + tilt, ability cast push, walk sway
+		local reloading = player:GetAttribute("Reloading") == true
+		reloadBlend += ((reloading and 1 or 0) - reloadBlend) * math.min(dt * 12, 1)
+		castKick = math.max(0, castKick - dt * 4)
+		local e = math.clamp((os.clock() - equipStart) / 0.35, 0, 1)
+		local equip = 1 - (1 - e) ^ 3
+		local moving = hum.MoveDirection.Magnitude > 0
+		local sway = moving and math.cos(os.clock() * 4.5) * 0.03 or 0
+		offset = offset
+			* CFrame.new(sway, -0.7 * (1 - equip) - 0.3 * reloadBlend, 0.1 * reloadBlend - 0.25 * castKick)
+			* CFrame.Angles(math.rad(-55) * (1 - equip) + math.rad(-30) * reloadBlend + math.rad(12) * castKick, 0, math.rad(28) * reloadBlend)
 		local vm: Model = viewmodel :: Model
 		vm:PivotTo(cam.CFrame * offset)
 	elseif viewmodel then
@@ -314,7 +356,8 @@ local function fireOnce(): boolean
 		FireRemote:FireServer(origin, dir)
 		slash(origin - Vector3.new(0, 0.5, 0), Vector3.new(dir.X, 0, dir.Z), w.Color)
 	end
-	if w.Type ~= "Melee" then flash(muzzle, tcol, 0.6) end
+	if w.Type ~= "Melee" then flash(muzzle, tcol, 0.6, dir) end
+	Sfx.Play("Fire_" .. w.Id)
 
 	-- recoil: viewmodel kick + small camera kick (bigger for heavy single shots)
 	local kick = (w.Damage >= 50) and 1.6 or (w.Type == "Melee" and 0 or 0.35)
@@ -381,7 +424,20 @@ player:GetAttributeChangedSignal("Ammo"):Connect(function()
 	if a < localAmmo or (w and a >= w.MagSize) then localAmmo = a end
 end)
 player:GetAttributeChangedSignal("Reloading"):Connect(function()
-	if not player:GetAttribute("Reloading") then syncAmmo() end
+	if player:GetAttribute("Reloading") then
+		Sfx.Play("Reload")
+	else
+		syncAmmo()
+		if viewmodel then Sfx.Play("ReloadDone") end
+	end
+end)
+-- viewmodel push when the server accepts a Skill / Ultimate
+player:GetAttributeChangedSignal("Ready_Skill"):Connect(function()
+	local readyAt = player:GetAttribute("Ready_Skill")
+	if typeof(readyAt) == "number" and readyAt > workspace:GetServerTimeNow() + 0.2 then castKick = 1 end
+end)
+player:GetAttributeChangedSignal("UltActive"):Connect(function()
+	if player:GetAttribute("UltActive") == true then castKick = 1 end
 end)
 player:GetAttributeChangedSignal("WeaponId"):Connect(syncAmmo)
 player.CharacterAdded:Connect(function()

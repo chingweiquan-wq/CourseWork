@@ -12,6 +12,7 @@ local player = Players.LocalPlayer
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local HeroConfig = require(Modules:WaitForChild("HeroConfig"))
 local ControlConfig = require(Modules:WaitForChild("ControlConfig"))
+local Sfx = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Sfx"))
 local IconConfig = require(Modules:WaitForChild("IconConfig"))
 local UI = require(Modules:WaitForChild("UIStyle"))
 local C = UI.Colors
@@ -127,6 +128,7 @@ local function doDash(cfg: any): boolean
 	Debris:AddItem(lv, m.Time)
 	Debris:AddItem(att, m.Time)
 	fovPunch(10)
+	Sfx.Play("Dash")
 	local h = hero()
 	afterimages(root, h and h.Color or C.Cyan, 3, m.Time / 3)
 	return true

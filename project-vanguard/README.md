@@ -13,7 +13,8 @@ The live game lives in Studio (place 90633802455621); models, maps and UI are no
 | 4 Game modes: Hold the Core, ranked (saved, 7 tiers), match history, MVP results | Done |
 | 5 Progression: tokens, hero unlocks (tokens + Robux), daily 7-day streak, Isaac shop, saving | Done |
 | 6 Cosmetics: 12 weapon skins (Arctic / Royal Gold / Void), inventory, shop SKINS tab, Robux skin purchases | Done |
-| 7 Audio & polish | Not started |
+| 7 Audio & polish: music, TTS announcer + kill streaks, SFX, animations, UI transitions, neon VFX, saved volume settings | Done |
+| 8 Leaderboards | Not started |
 
 ## Ranked
 - Saved in DataStore `VG_PlayerData` (Studio uses `STUDIO_` stores). Start 450 RP (Silver II), 100 RP per division.
@@ -28,6 +29,15 @@ The live game lives in Studio (place 90633802455621); models, maps and UI are no
 - 2 per weapon: Arctic (Uncommon, R$25) and a Legendary (R$99): Royal Gold for Burst/Heavy Cannon/Gauntlet, Void for Precision/Medical/Blades.
 - Legendaries have animated glowing trims and coloured tracers. Equip from the Skins dock button or buy in Isaac's shop SKINS tab.
 - Robux skin purchases: put developer product IDs in `ProductConfig.SkinProducts`. In Studio every skin counts as owned (`GameConfig.Cosmetics.StudioOwnAllSkins`); live servers don't.
+
+## Audio & polish (Phase 7)
+- Music: lobby "Dark Tension Underscore"; one action track per map (APM / DistroKid licensed library tracks). Crossfades, ducks on results.
+- SFX: Roblox built-in sounds reshaped per weapon (pitch/distortion) - no ripped game audio. Your shots play instantly, others' in 3D.
+- Announcer: Roblox text-to-speech (original voice). Double/Triple/Quad Kill, Team Wipe, On Fire (3), Unstoppable (5), Dominating (7), Vanguard (10), First Blood, Shutdown, Fight/Victory/Defeat, Core secured/lost.
+- Animations (R15, generated + published): skill cast, ultimate, victory, defeat, lobby salute (G). Cast plays only after the server accepts the ability.
+- VFX: neon low-poly shard muzzle flashes/impacts, digital-dissolve deaths in team colour, viewmodel equip/reload/cast motion.
+- UI: button hover/click sounds + bounce, modal fade in/out, deploy/return scanline wipe.
+- Settings (dock): Music / SFX / Announcer sliders, saved in the profile (`Progress.Settings`), validated server-side. Tunables in `AudioConfig`.
 
 ## Layout
 `src/` mirrors the Studio tree:

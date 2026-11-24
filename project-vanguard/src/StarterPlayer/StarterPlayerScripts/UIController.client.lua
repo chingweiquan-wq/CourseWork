@@ -7,6 +7,7 @@ local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
 local MarketplaceService = game:GetService("MarketplaceService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -22,6 +23,7 @@ local RankBadge = require(Modules.RankBadge)
 local ProductConfig = require(Modules.ProductConfig)
 local SkinConfig = require(Modules.SkinConfig)
 local SkinVisuals = require(Modules.SkinVisuals)
+local Sfx = require(Modules.Sfx)
 local C = UI.Colors
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -41,6 +43,7 @@ local ClaimDaily = Remotes:WaitForChild("ClaimDaily")
 local TokensEarned = Remotes:WaitForChild("TokensEarned")
 local EquipSkin = Remotes:WaitForChild("EquipSkin")
 local BuySkin = Remotes:WaitForChild("BuySkin")
+local SaveSettings = Remotes:WaitForChild("SaveSettings")
 
 local profile = { Tokens = 0, UnlockedHeroes = HeroConfig.StarterHeroes, SelectedHero = HeroConfig.StarterHeroes[1], Rank = "Unranked" }
 local queueState = { InQueue = false }
@@ -168,8 +171,17 @@ local function makeModal(gui: ScreenGui, title: string, accent: Color3): (Frame,
 	UI.Label({ Parent = win, Text = title, Font = UI.Fonts.Title, Color = accent, Size = UDim2.fromScale(0.6, 0.09), Position = UDim2.fromScale(0.03, 0.03), AlignX = Enum.TextXAlignment.Left, MaxSize = 40 })
 	local close = UI.Button({ Parent = win, Name = "Close", Text = "X", Size = UDim2.fromScale(0.05, 0.085), Position = UDim2.fromScale(0.975, 0.03), AnchorPoint = Vector2.new(1, 0), Accent = C.Red, MaxSize = 26 })
 	close.MouseButton1Click:Connect(function()
-		dim.Visible = false
+		-- Phase 7: shrink + fade out instead of vanishing
 		if openPanel == dim then openPanel = nil end
+		local sc = win:FindFirstChildOfClass("UIScale")
+		local out = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		if sc then TweenService:Create(sc, out, { Scale = 0.88 }):Play() end
+		TweenService:Create(dim, out, { BackgroundTransparency = 1 }):Play()
+		Sfx.Play("UIClose")
+		task.delay(0.13, function()
+			if openPanel ~= dim then dim.Visible = false end
+			dim.BackgroundTransparency = 0.45
+		end)
 	end)
 	local body = Instance.new("Frame"); body.Name = "Body"; body.BackgroundTransparency = 1
 	body.Size = UDim2.fromScale(0.94, 0.8); body.Position = UDim2.fromScale(0.03, 0.16); body.Parent = win
@@ -676,7 +688,99 @@ charBtn.MouseButton1Click:Connect(function()
 	showHero(viewedHero)
 	showModal(charDim)
 end)
-settingsBtn.MouseButton1Click:Connect(function() toast("Settings arrive in a later phase", C.Subtext) end)
+---------------------------------------------------------------- SETTINGS (Phase 7: saved audio volumes)
+local settingsDim, settingsBody = makeModal(lobbyGui, "SETTINGS", C.Cyan)
+settingsDim.Name = "SettingsMenu"
+local SLIDERS = {
+	{ Kind = "Music", Label = "MUSIC" },
+	{ Kind = "Sfx", Label = "SOUND EFFECTS" },
+	{ Kind = "Announcer", Label = "ANNOUNCER" },
+}
+local sliderSet: { [string]: (number) -> () } = {}
+local draggingKind: string? = nil
+local saveQueued = false
+
+local function saveSettings()
+	if saveQueued then return end
+	saveQueued = true
+	task.delay(0.6, function()
+		saveQueued = false
+		local ok, res = pcall(function()
+			return SaveSettings:InvokeServer({ Music = Sfx.GetVolume("Music"), Sfx = Sfx.GetVolume("Sfx"), Announcer = Sfx.GetVolume("Announcer") })
+		end)
+		if not ok or typeof(res) ~= "table" or not res.Ok then
+			toast("Couldn't save settings" .. ((ok and typeof(res) == "table" and res.Reason) and (": " .. res.Reason) or ""), C.Red)
+		end
+	end)
+end
+
+for i, def in ipairs(SLIDERS) do
+	local y = (i - 1) * 0.19
+	UI.Label({ Parent = settingsBody, Text = def.Label, Font = UI.Fonts.Title, Size = UDim2.fromScale(0.3, 0.1), Position = UDim2.fromScale(0.02, y + 0.02), AlignX = Enum.TextXAlignment.Left, MaxSize = 28 })
+	local track = Instance.new("TextButton")
+	track.Name = def.Kind .. "Slider"; track.Text = ""; track.AutoButtonColor = false
+	track.BackgroundColor3 = C.Panel; track.BorderSizePixel = 0
+	track.Size = UDim2.fromScale(0.46, 0.045); track.Position = UDim2.fromScale(0.35, y + 0.05)
+	track:SetAttribute("NoPolish", true)
+	UI.Corner(track, 6)
+	UI.Stroke(track, C.Cyan, 1.5, 0.5)
+	track.Parent = settingsBody
+	local fill = Instance.new("Frame"); fill.Name = "Fill"; fill.BorderSizePixel = 0; fill.BackgroundColor3 = C.Cyan
+	fill.Size = UDim2.fromScale(0.5, 1); fill.Parent = track
+	UI.Corner(fill, 6)
+	local knob = Instance.new("Frame"); knob.Name = "Knob"; knob.BorderSizePixel = 0; knob.BackgroundColor3 = Color3.new(1, 1, 1)
+	knob.AnchorPoint = Vector2.new(0.5, 0.5); knob.Size = UDim2.fromScale(1, 2.2); knob.Position = UDim2.fromScale(0.5, 0.5)
+	local ka = Instance.new("UIAspectRatioConstraint"); ka.AspectRatio = 1; ka.DominantAxis = Enum.DominantAxis.Height; ka.Parent = knob
+	UI.Corner(knob, 20)
+	UI.Stroke(knob, C.Cyan, 2, 0)
+	knob.Parent = track
+	local value = UI.Label({ Parent = settingsBody, Text = "", Font = UI.Fonts.Title, Color = C.Cyan, Size = UDim2.fromScale(0.13, 0.1), Position = UDim2.fromScale(0.84, y + 0.02), MaxSize = 28 })
+
+	local function set(v: number)
+		v = math.clamp(v, 0, 1)
+		fill.Size = UDim2.fromScale(v, 1)
+		knob.Position = UDim2.fromScale(v, 0.5)
+		value.Text = math.floor(v * 100 + 0.5) .. "%"
+		Sfx.SetVolume(def.Kind, v)
+	end
+	sliderSet[def.Kind] = set
+	set(Sfx.GetVolume(def.Kind))
+
+	local function fromX(x: number)
+		set((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1))
+	end
+	track.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			draggingKind = def.Kind
+			fromX(input.Position.X)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if draggingKind == def.Kind and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			fromX(input.Position.X)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if draggingKind ~= def.Kind then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			draggingKind = nil
+			saveSettings()
+			if def.Kind == "Sfx" then Sfx.Play("HitMarker")
+			elseif def.Kind == "Announcer" then Sfx.Announce("Double kill!") end
+		end
+	end)
+	-- the server's saved value wins on join (and after it validates a save)
+	player:GetAttributeChangedSignal("Vol" .. def.Kind):Connect(function()
+		local v = player:GetAttribute("Vol" .. def.Kind)
+		if typeof(v) == "number" and draggingKind ~= def.Kind then set(v) end
+	end)
+end
+
+local testVoice = UI.Button({ Parent = settingsBody, Name = "TestVoice", Text = "TEST ANNOUNCER", Size = UDim2.fromScale(0.3, 0.1), Position = UDim2.fromScale(0.02, 0.62), Accent = C.Magenta, MaxSize = 24 })
+testVoice.MouseButton1Click:Connect(function() Sfx.Announce("Unstoppable!") end)
+UI.Label({ Parent = settingsBody, Text = "Settings save to your profile automatically.\nLobby: press G to salute.", Font = UI.Fonts.Body, Color = C.Subtext, Size = UDim2.fromScale(0.6, 0.16), Position = UDim2.fromScale(0.37, 0.6), AlignX = Enum.TextXAlignment.Left, MaxSize = 20 })
+
+settingsBtn.MouseButton1Click:Connect(function() showModal(settingsDim) end)
 plusBtn.MouseButton1Click:Connect(function() toast("Token packs arrive with Robux purchases (Phase 6)", C.Gold) end)
 -- Isaac's shop window uses the Clean Shop GUI kit (UI by @roary16), filled with hero offers.
 local kitShop = playerGui:WaitForChild("IsaacShopUI", 10)

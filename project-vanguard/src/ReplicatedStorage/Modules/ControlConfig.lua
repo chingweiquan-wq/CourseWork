@@ -9,6 +9,7 @@ ControlConfig.Binds = {
 	Dash = Enum.KeyCode.LeftShift,
 	Skill = Enum.KeyCode.E,
 	Ultimate = Enum.KeyCode.Q,
+	Emote = Enum.KeyCode.G, -- lobby salute (Phase 7)
 	Jump = Enum.KeyCode.Space, -- handled by Roblox's default controls
 }
 
