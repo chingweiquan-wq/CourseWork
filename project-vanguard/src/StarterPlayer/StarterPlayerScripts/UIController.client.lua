@@ -264,7 +264,7 @@ local function heroPortrait(parent: Instance, heroId: string, size: UDim2, pos: 
 		if old then old:Destroy() end
 		if tpl then
 			local m = tpl:Clone()
-			m:PivotTo(CFrame.new())
+			m:PivotTo(CFrame.Angles(0, math.pi, 0)) -- statue fronts face +Z; turn them toward the camera
 			m.Parent = vf
 		end
 	end
