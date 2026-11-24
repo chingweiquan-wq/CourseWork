@@ -9,6 +9,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GameConfig = require(ReplicatedStorage.Modules.GameConfig)
 local HeroConfig = require(ReplicatedStorage.Modules.HeroConfig)
 local WeaponConfig = require(ReplicatedStorage.Modules.WeaponConfig)
+local SkinConfig = require(ReplicatedStorage.Modules.SkinConfig)
+local SkinVisuals = require(ReplicatedStorage.Modules.SkinVisuals)
 local MatchManager = require(script.Parent.MatchManager)
 local LobbyService = require(script.Parent.LobbyService)
 
@@ -35,9 +37,10 @@ end
 -- Each model's PivotOffset is its mount point (weapon grip / helmet centre), with -Z = forward.
 local HeroAssets = ReplicatedStorage:FindFirstChild("HeroAssets")
 
-local function weldModel(template: Model, anchorPart: BasePart, offset: CFrame, name: string, parent: Instance)
+local function weldModel(template: Model, anchorPart: BasePart, offset: CFrame, name: string, parent: Instance, skinId: string?)
 	local clone = template:Clone()
 	clone.Name = name
+	SkinVisuals.Apply(clone, skinId) -- cosmetic only; no-op for the default look
 	for _, d in ipairs(clone:GetDescendants()) do
 		if d:IsA("BasePart") then
 			d.Anchored = false; d.CanCollide = false; d.CanQuery = false; d.CanTouch = false; d.Massless = true
@@ -61,7 +64,7 @@ local WEAPON_MOUNTS = {
 }
 local DEFAULT_MOUNT = { { "RightHand", CFrame.new(0, -0.15, -0.2) } }
 
-local function buildWorldWeapon(character: Model, weaponId: string)
+local function buildWorldWeapon(character: Model, weaponId: string, skinId: string?)
 	local w = WeaponConfig.Weapons[weaponId]
 	local hand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
 	if not w or not hand or not hand:IsA("BasePart") then return end
@@ -74,7 +77,7 @@ local function buildWorldWeapon(character: Model, weaponId: string)
 		for _, mount in ipairs(WEAPON_MOUNTS[weaponId] or DEFAULT_MOUNT) do
 			local part = character:FindFirstChild(mount[1])
 			if part and part:IsA("BasePart") then
-				weldModel(template :: Model, part, mount[2], "WeaponModel", character)
+				weldModel(template :: Model, part, mount[2], "WeaponModel", character, skinId)
 			end
 		end
 		return
@@ -151,7 +154,7 @@ local function setupCharacter(player: Player, character: Model)
 		player:SetAttribute("WeaponId", hero.WeaponId)
 		character:WaitForChild("RightHand", 5)
 		applyHeroLook(character, heroId)
-		buildWorldWeapon(character, hero.WeaponId)
+		buildWorldWeapon(character, hero.WeaponId, SkinConfig.EquippedFor(player, hero.WeaponId))
 		local ff = Instance.new("ForceField")
 		ff.Visible = true
 		ff.Parent = character

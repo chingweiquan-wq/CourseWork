@@ -10,6 +10,8 @@ local Debris = game:GetService("Debris")
 
 local player = Players.LocalPlayer
 local WeaponConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("WeaponConfig"))
+local SkinConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("SkinConfig"))
+local SkinVisuals = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("SkinVisuals"))
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local FireRemote = Remotes:WaitForChild("Fire")
 local ReloadRemote = Remotes:WaitForChild("Reload")
@@ -111,10 +113,17 @@ local function visualParams(): RaycastParams
 	return params
 end
 
-local function startVisualProjectile(key: any, from: Vector3, vel: Vector3, w: any)
-	local p = fxPart(Vector3.one * (w.ProjectileSize or 0.5), CFrame.new(from), w.TracerColor, Enum.PartType.Ball)
+-- bullet / projectile colour: a Legendary skin tints the shooter's tracers (purely visual)
+local function tracerColorFor(userId: number?, w: any): Color3
+	local shooter = userId and Players:GetPlayerByUserId(userId) or nil
+	return SkinVisuals.TracerColor(SkinConfig.EquippedFor(shooter, w.Id), w.TracerColor)
+end
+
+local function startVisualProjectile(key: any, from: Vector3, vel: Vector3, w: any, color: Color3?)
+	local col = color or w.TracerColor
+	local p = fxPart(Vector3.one * (w.ProjectileSize or 0.5), CFrame.new(from), col, Enum.PartType.Ball)
 	local light = Instance.new("PointLight")
-	light.Color = w.TracerColor; light.Range = 6; light.Brightness = 2; light.Parent = p
+	light.Color = col; light.Range = 6; light.Brightness = 2; light.Parent = p
 	visuals[key] = { Part = p, Pos = from, Vel = vel, Travelled = 0, Range = w.Range }
 end
 
@@ -158,6 +167,7 @@ local function buildModelViewmodel(w: any, template: Model): Model
 	model.Name = "Viewmodel"
 	local function addCopy(offset: CFrame)
 		local c = template:Clone()
+		SkinVisuals.Apply(c, SkinConfig.EquippedFor(player, w.Id)) -- equipped skin on the first-person weapon
 		for _, d in ipairs(c:GetDescendants()) do
 			if d:IsA("BasePart") then
 				d.Anchored = true; d.CanCollide = false; d.CanQuery = false; d.CanTouch = false; d.CastShadow = false
@@ -231,6 +241,11 @@ local function muzzlePosition(): Vector3
 	return workspace.CurrentCamera.CFrame.Position
 end
 
+-- rebuild the first-person weapon when the equipped skin changes
+player:GetAttributeChangedSignal("EquippedSkins"):Connect(function()
+	if viewmodel then destroyViewmodel() end
+end)
+
 RunService.RenderStepped:Connect(function(dt)
 	local w = getWeapon()
 	local hum = getHumanoid()
@@ -283,22 +298,23 @@ local function fireOnce(): boolean
 	local origin = cam.CFrame.Position
 	local dir = spreadDirection(cam.CFrame.LookVector, w.Spread or 0)
 	local muzzle = muzzlePosition()
+	local tcol = tracerColorFor(player.UserId, w)
 
 	if w.Type == "Hitscan" then
 		local result = workspace:Raycast(origin, dir * w.Range, clientParams())
 		local to = result and result.Position or origin + dir * w.Range
-		tracer(muzzle, to, w.TracerColor, w.Damage >= 50 and 0.14 or 0.06)
-		if result then impact(to, w.TracerColor, 0) end
+		tracer(muzzle, to, tcol, w.Damage >= 50 and 0.14 or 0.06)
+		if result then impact(to, tcol, 0) end
 		FireRemote:FireServer(origin, dir, result and result.Instance or nil)
 	elseif w.Type == "Projectile" then
 		FireRemote:FireServer(origin, dir)
 		visualKey += 1
-		startVisualProjectile("local" .. visualKey, muzzle, dir * w.ProjectileSpeed, w)
+		startVisualProjectile("local" .. visualKey, muzzle, dir * w.ProjectileSpeed, w, tcol)
 	elseif w.Type == "Melee" then
 		FireRemote:FireServer(origin, dir)
 		slash(origin - Vector3.new(0, 0.5, 0), Vector3.new(dir.X, 0, dir.Z), w.Color)
 	end
-	if w.Type ~= "Melee" then flash(muzzle, w.TracerColor, 0.6) end
+	if w.Type ~= "Melee" then flash(muzzle, tcol, 0.6) end
 
 	-- recoil: viewmodel kick + small camera kick (bigger for heavy single shots)
 	local kick = (w.Damage >= 50) and 1.6 or (w.Type == "Melee" and 0 or 0.35)
@@ -381,14 +397,15 @@ CombatFx.OnClientEvent:Connect(function(data)
 	local w = WeaponConfig.Weapons[data.Weapon]
 	if not w then return end
 	local mine = data.Shooter == player.UserId
+	local tcol = tracerColorFor(data.Shooter, w)
 	if data.Type == "Shot" and not mine then
-		tracer(data.From, data.To, w.TracerColor, w.Damage >= 50 and 0.14 or 0.06)
-		impact(data.To, w.TracerColor, 0)
+		tracer(data.From, data.To, tcol, w.Damage >= 50 and 0.14 or 0.06)
+		impact(data.To, tcol, 0)
 	elseif data.Type == "Projectile" and not mine then
-		startVisualProjectile(data.Id, data.From, data.Velocity, w)
+		startVisualProjectile(data.Id, data.From, data.Velocity, w, tcol)
 	elseif data.Type == "Impact" then
 		stopVisual(data.Id)
-		impact(data.Position, w.TracerColor, data.Radius or 0)
+		impact(data.Position, tcol, data.Radius or 0)
 	elseif data.Type == "Melee" and not mine then
 		slash(data.From, data.Dir, w.Color)
 	end

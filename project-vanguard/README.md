@@ -12,7 +12,8 @@ The live game lives in Studio (place 90633802455621); models, maps and UI are no
 | Visual pass (darker lighting, 3D weapons, helmets, lobby statues) | Done |
 | 4 Game modes: Hold the Core, ranked (saved, 7 tiers), match history, MVP results | Done |
 | 5 Progression: tokens, hero unlocks (tokens + Robux), daily 7-day streak, Isaac shop, saving | Done |
-| 6 Cosmetics (weapon skins, Robux) | Not started |
+| 6 Cosmetics: 12 weapon skins (Arctic / Royal Gold / Void), inventory, shop SKINS tab, Robux skin purchases | Done |
+| 7 Audio & polish | Not started |
 
 ## Ranked
 - Saved in DataStore `VG_PlayerData` (Studio uses `STUDIO_` stores). Start 450 RP (Silver II), 100 RP per division.
@@ -22,6 +23,11 @@ The live game lives in Studio (place 90633802455621); models, maps and UI are no
 - Finish +40, win +30, MVP +10, ranked x1.25. No tokens for abandoned matches or AFK players (active < 30% of the match).
 - Daily streak: 50, 75, 100, 125, 150, 200, 300 (resets at 00:00 UTC = 8am Malaysia time).
 - Robux hero purchases: put developer product IDs in `ReplicatedStorage/Modules/ProductConfig.lua`.
+
+## Weapon skins
+- 2 per weapon: Arctic (Uncommon, R$25) and a Legendary (R$99): Royal Gold for Burst/Heavy Cannon/Gauntlet, Void for Precision/Medical/Blades.
+- Legendaries have animated glowing trims and coloured tracers. Equip from the Skins dock button or buy in Isaac's shop SKINS tab.
+- Robux skin purchases: put developer product IDs in `ProductConfig.SkinProducts`. In Studio every skin counts as owned (`GameConfig.Cosmetics.StudioOwnAllSkins`); live servers don't.
 
 ## Layout
 `src/` mirrors the Studio tree:

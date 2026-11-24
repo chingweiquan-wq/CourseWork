@@ -13,6 +13,7 @@ local AbilityService = require(ServerModules.AbilityService)
 local ObjectiveService = require(ServerModules.ObjectiveService)
 local RankedService = require(ServerModules.RankedService)
 local ProgressionService = require(ServerModules.ProgressionService)
+local SkinService = require(ServerModules.SkinService)
 
 MapService.Init()
 MatchManager.Init()
@@ -23,8 +24,9 @@ AbilityService.Init()  -- hooks into combat (buffs, ult charge) and character sp
 ObjectiveService.Init() -- Hold the Core (Casual + Ranked)
 RankedService.Init()    -- saved rank, season, match history, leaderboard
 ProgressionService.Init() -- tokens, hero unlocks (tokens + Robux), daily streak, lifetime stats
+SkinService.Init()      -- weapon skins: ownership, equip, Robux purchases
 DummyService.Init()
 LobbyDisplayService.Init()
 CharacterService.Init() -- loads characters last (auto-respawn is off)
 
-print("[PROJECT VANGUARD] Server ready - Phase 5")
+print("[PROJECT VANGUARD] Server ready - Phase 6")

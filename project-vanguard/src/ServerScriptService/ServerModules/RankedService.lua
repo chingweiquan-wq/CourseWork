@@ -24,6 +24,7 @@ local RunService = game:GetService("RunService")
 local GameConfig = require(ReplicatedStorage.Modules.GameConfig)
 local RankConfig = require(ReplicatedStorage.Modules.RankConfig)
 local HeroConfig = require(ReplicatedStorage.Modules.HeroConfig)
+local SkinConfig = require(ReplicatedStorage.Modules.SkinConfig)
 local MatchManager = require(script.Parent.MatchManager)
 
 local Cfg = GameConfig.Ranked
@@ -44,6 +45,7 @@ type ProgressData = {
 	Stats: { Kills: number, Deaths: number, Assists: number, Matches: number, Wins: number, Losses: number, TokensEarned: number },
 	Daily: { LastDay: number, Streak: number },
 	RobuxSpent: number, Receipts: { [string]: number },
+	Skins: { Owned: { [string]: boolean }, Equipped: { [string]: string } },
 }
 type PlayerData = { Version: number, Ranked: RankedData, Progress: ProgressData, History: { HistoryEntry }, Lock: { Job: string, Time: number }? }
 type Profile = { Data: PlayerData, Usable: boolean, Dirty: boolean }
@@ -102,6 +104,17 @@ local function reconcile(data: any): PlayerData
 	pr.Daily = { LastDay = tonumber(daily.LastDay) or 0, Streak = tonumber(daily.Streak) or 0 }
 	pr.RobuxSpent = tonumber(pr.RobuxSpent) or 0
 	pr.Receipts = typeof(pr.Receipts) == "table" and pr.Receipts or {}
+	local sk = typeof(pr.Skins) == "table" and pr.Skins or {}
+	sk.Owned = typeof(sk.Owned) == "table" and sk.Owned or {}
+	sk.Equipped = typeof(sk.Equipped) == "table" and sk.Equipped or {}
+	for id in pairs(sk.Owned) do
+		if not SkinConfig.Skins[id] then sk.Owned[id] = nil end -- removed skins
+	end
+	for weapon, id in pairs(sk.Equipped) do
+		local skin = SkinConfig.Skins[id]
+		if not skin or skin.Weapon ~= weapon or not sk.Owned[id] then sk.Equipped[weapon] = nil end
+	end
+	pr.Skins = sk
 	data.Progress = pr
 	return data
 end

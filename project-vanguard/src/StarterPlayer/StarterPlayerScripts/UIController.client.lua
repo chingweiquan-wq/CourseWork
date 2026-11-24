@@ -20,6 +20,8 @@ local IconConfig = require(Modules.IconConfig)
 local RankConfig = require(Modules.RankConfig)
 local RankBadge = require(Modules.RankBadge)
 local ProductConfig = require(Modules.ProductConfig)
+local SkinConfig = require(Modules.SkinConfig)
+local SkinVisuals = require(Modules.SkinVisuals)
 local C = UI.Colors
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -37,6 +39,8 @@ local BuyHero = Remotes:WaitForChild("BuyHero")
 local BuyHeroRobux = Remotes:WaitForChild("BuyHeroRobux")
 local ClaimDaily = Remotes:WaitForChild("ClaimDaily")
 local TokensEarned = Remotes:WaitForChild("TokensEarned")
+local EquipSkin = Remotes:WaitForChild("EquipSkin")
+local BuySkin = Remotes:WaitForChild("BuySkin")
 
 local profile = { Tokens = 0, UnlockedHeroes = HeroConfig.StarterHeroes, SelectedHero = HeroConfig.StarterHeroes[1], Rank = "Unranked" }
 local queueState = { InQueue = false }
@@ -92,12 +96,13 @@ plusBtn.Parent = tokenPill
 local dock = UI.Panel({ Parent = lobbyGui, Name = "Dock", Size = UDim2.fromScale(0.36, 0.15), Position = UDim2.fromScale(0.5, 0.985), AnchorPoint = Vector2.new(0.5, 1), Color = C.Bg, Transparency = 0.45, Corner = 14 })
 local dockList = Instance.new("UIListLayout")
 dockList.FillDirection = Enum.FillDirection.Horizontal; dockList.HorizontalAlignment = Enum.HorizontalAlignment.Center
-dockList.VerticalAlignment = Enum.VerticalAlignment.Center; dockList.Padding = UDim.new(0.06, 0); dockList.SortOrder = Enum.SortOrder.LayoutOrder
+dockList.VerticalAlignment = Enum.VerticalAlignment.Center; dockList.Padding = UDim.new(0.04, 0); dockList.SortOrder = Enum.SortOrder.LayoutOrder
 dockList.Parent = dock
 local dockAspect = Instance.new("UIAspectRatioConstraint"); dockAspect.AspectRatio = 4; dockAspect.Parent = dock
-local charBtn = UI.DockButton({ Parent = dock, Name = "Characters", Icon = "Characters", Text = "Heroes", Size = UDim2.fromScale(0.22, 0.86), Order = 1 })
-local shopBtn = UI.DockButton({ Parent = dock, Name = "Shop", Icon = "Shop", Text = "Shop", Size = UDim2.fromScale(0.22, 0.86), Order = 2 })
-local settingsBtn = UI.DockButton({ Parent = dock, Name = "Settings", Icon = "Settings", Text = "Settings", Size = UDim2.fromScale(0.22, 0.86), Order = 3 })
+local charBtn = UI.DockButton({ Parent = dock, Name = "Characters", Icon = "Characters", Text = "Heroes", Size = UDim2.fromScale(0.19, 0.86), Order = 1 })
+local shopBtn = UI.DockButton({ Parent = dock, Name = "Shop", Icon = "Shop", Text = "Shop", Size = UDim2.fromScale(0.19, 0.86), Order = 2 })
+local invBtn = UI.DockButton({ Parent = dock, Name = "Inventory", Icon = "Gem", Text = "Skins", Size = UDim2.fromScale(0.19, 0.86), Order = 3 })
+local settingsBtn = UI.DockButton({ Parent = dock, Name = "Settings", Icon = "Settings", Text = "Settings", Size = UDim2.fromScale(0.19, 0.86), Order = 4 })
 
 -- big green PLAY button sitting on top of the dock
 local playBtn = Instance.new("TextButton")
@@ -336,7 +341,7 @@ local function showTab(name: string)
 		end
 		shopText.Text = table.concat(lines, "\n") .. "\n\n<font color=\"#8c96b9\">Buy heroes from the Heroes menu.</font>"
 	elseif name == "WEAPON SKINS" then
-		shopText.Text = "Cosmetic weapon skins (Robux only, no gameplay advantage).\n\n<font color=\"#8c96b9\">Catalog, previews and secure purchases go live in Phase 6.</font>"
+		shopText.Text = "Cosmetic weapon skins (Robux only, no gameplay advantage).\n\n<font color=\"#8c96b9\">Browse, preview and equip them from the Skins button.</font>"
 	else
 		shopText.Text = string.format("Balance: <font color=\"#ffc83c\">%d TOKENS</font>\n\nEarn tokens by finishing matches (+%d), winning (+%d), MVP (+%d) and your daily login streak.", profile.Tokens, GameConfig.Progression.Rewards.Complete, GameConfig.Progression.Rewards.Win, GameConfig.Progression.Rewards.MVP)
 	end
@@ -751,6 +756,142 @@ local function restyleKit()
 	end
 end
 
+---------------------------------------------------------------- WEAPON SKINS (preview, shop tab, inventory)
+local function ownsSkin(id: string): boolean
+	local owned = player:GetAttribute("OwnedSkins")
+	return typeof(owned) == "string" and table.find(string.split(owned, ","), id) ~= nil
+end
+
+-- 3D weapon preview with a skin applied (side view, slow spin). Returns a setter.
+local function weaponPreview(parent: Instance, size: UDim2, pos: UDim2, spin: boolean): (ViewportFrame, (string?, string?) -> ())
+	local vf = Instance.new("ViewportFrame")
+	vf.Name = "WeaponPreview"
+	vf.BackgroundTransparency = 1
+	vf.Size = size
+	vf.Position = pos
+	vf.Ambient = Color3.fromRGB(150, 150, 170)
+	vf.LightColor = Color3.fromRGB(255, 250, 240)
+	vf.LightDirection = Vector3.new(-0.5, -0.7, -0.4)
+	local cam = Instance.new("Camera")
+	cam.FieldOfView = 30
+	cam.Parent = vf
+	vf.CurrentCamera = cam
+	vf.Parent = parent
+	local current: Model? = nil
+	local function set(weaponId: string?, skinId: string?)
+		if current then current:Destroy(); current = nil end
+		local tpl = weaponId and HeroAssets and HeroAssets:FindFirstChild("Weapons") and HeroAssets.Weapons:FindFirstChild(weaponId)
+		if not tpl then return end
+		local m = tpl:Clone()
+		SkinVisuals.Apply(m, skinId)
+		m.PrimaryPart = nil -- pivot around the weapon's centre (not its grip) so it spins in place
+		local box, bsize = m:GetBoundingBox()
+		m.WorldPivot = box
+		m:PivotTo(CFrame.new())
+		local fit = math.max(bsize.X, bsize.Y, bsize.Z) * 0.5 / math.tan(math.rad(15)) * 1.1
+		cam.CFrame = CFrame.lookAt(Vector3.new(fit, fit * 0.15, 0), Vector3.zero)
+		m.Parent = vf
+		current = m
+	end
+	if spin then
+		local conn: RBXScriptConnection
+		conn = RunService.RenderStepped:Connect(function()
+			if not vf.Parent then conn:Disconnect(); return end
+			if current and vf.Visible then current:PivotTo(CFrame.Angles(0, os.clock() * 0.6, 0)) end
+		end)
+	end
+	return vf, set
+end
+
+local skinCards: { [string]: { Buy: TextButton } } = {}
+local skinPrices: { [string]: number } = {}
+local function refreshSkinCards()
+	for id, refs in pairs(skinCards) do
+		local skin = SkinConfig.Skins[id]
+		local rarity = SkinConfig.Rarities[skin.Rarity]
+		if ownsSkin(id) then
+			local equipped = SkinConfig.EquippedFor(player, skin.Weapon) == id
+			refs.Buy.Text = equipped and "EQUIPPED" or "OWNED"
+			refs.Buy.BackgroundColor3 = C.Green
+		else
+			refs.Buy.Text = "R$ " .. tostring(skinPrices[id] or rarity.PriceRobux)
+			refs.Buy.BackgroundColor3 = Color3.fromRGB(0, 176, 111)
+		end
+	end
+end
+
+local openInventory: (string?, string?) -> () -- defined below
+
+-- SKINS tab inside Isaac's kit shop: same card layout, weapon previews instead of hero statues
+local function buildSkinTab(items: ScrollingFrame, template: Frame)
+	local skinItems = items:Clone()
+	skinItems.Name = "SkinItems"
+	for _, c in ipairs(skinItems:GetChildren()) do
+		if c:IsA("Frame") then c:Destroy() end
+	end
+	skinItems.Visible = false
+	skinItems.Parent = items.Parent
+	for i, skin in ipairs(SkinConfig.All()) do
+		local rarity = SkinConfig.Rarities[skin.Rarity]
+		local card = template:Clone()
+		card.Name = "skin_" .. skin.Id
+		card.LayoutOrder = i
+		card.BackgroundColor3 = C.Panel
+		local stroke = card:FindFirstChildOfClass("UIStroke")
+		if stroke then stroke.Color = rarity.Color; stroke.Thickness = 2 end
+		card.TextLabel.Text = skin.Name
+		card.TextLabel.TextColor3 = rarity.Color
+		card.TextLabel.Font = UI.Fonts.Title
+		for _, img in ipairs(card:GetChildren()) do
+			if img:IsA("ImageLabel") then
+				if img.Image:find("GuiImagePlaceholder") then
+					local _, set = weaponPreview(card, img.Size, img.Position, true)
+					set(skin.Weapon, skin.Id)
+				end
+				img.Visible = false
+			end
+		end
+		local buy = card:FindFirstChild("Buy") :: TextButton
+		buy.TextColor3 = Color3.new(1, 1, 1)
+		buy.Font = UI.Fonts.Title
+		local bs = buy:FindFirstChildOfClass("UIStroke")
+		if bs then bs.Enabled = false end
+		buy.MouseButton1Click:Connect(function()
+			if ownsSkin(skin.Id) then
+				if kitFrame then kitFrame.Visible = false end
+				openInventory(skin.Weapon, skin.Id)
+			else
+				BuySkin:FireServer(skin.Id) -- the server checks it and shows Roblox's purchase prompt
+			end
+		end)
+		skinCards[skin.Id] = { Buy = buy }
+		local productId = ProductConfig.SkinProducts[skin.Id]
+		if productId and productId > 0 then
+			task.spawn(function()
+				local ok, info = pcall(function() return MarketplaceService:GetProductInfo(productId, Enum.InfoType.Product) end)
+				if ok and info and info.PriceInRobux then skinPrices[skin.Id] = info.PriceInRobux; refreshSkinCards() end
+			end)
+		end
+		card.Parent = skinItems
+	end
+	refreshSkinCards()
+	-- HEROES | SKINS tabs
+	local function tab(name: string, x: number, show: GuiObject, hide: GuiObject)
+		local t = UI.Button({ Parent = kitFrame, Name = "Tab" .. name, Text = name, Size = UDim2.fromScale(0.15, 0.07), Position = UDim2.fromScale(x, 0.175), Accent = C.Gold, MaxSize = 20 })
+		t.MouseButton1Click:Connect(function()
+			show.Visible = true
+			hide.Visible = false
+			local grid = show:FindFirstChildOfClass("UIGridLayout")
+			if grid and show.AbsoluteSize.X > 0 then
+				local cell = math.floor((show.AbsoluteSize.X - 30) / 3)
+				grid.CellSize = UDim2.fromOffset(cell, cell)
+			end
+		end)
+	end
+	tab("HEROES", 0.43, items, skinItems)
+	tab("SKINS", 0.6, skinItems, items)
+end
+
 local function populateKitShop()
 	if not kitFrame then return end
 	local items = kitFrame:FindFirstChild("Items")
@@ -824,12 +965,137 @@ local function populateKitShop()
 		item.Parent = items
 	end
 	refreshKitItems()
+	buildSkinTab(items, template)
 	if not kitFrame:FindFirstChild("Credit") then
 		local credit = UI.Label({ Parent = kitFrame, Name = "Credit", Text = "Shop UI by @roary16", Font = UI.Fonts.Body, Color = C.Subtext, Size = UDim2.fromScale(0.4, 0.04), Position = UDim2.fromScale(0.58, 0.95), MaxSize = 12, NoStroke = true })
 		credit.TextXAlignment = Enum.TextXAlignment.Right
 	end
 	kitPopulated = true
 end
+
+-- INVENTORY: pick a weapon, preview each owned skin in 3D, equip / unequip
+local invGui = UI.ScreenGui("InventoryUI", playerGui, 10)
+local invDim, invBody = makeModal(invGui, "WEAPON SKINS", C.Cyan)
+invDim.Name = "InventoryMenu"
+local weaponList = Instance.new("Frame"); weaponList.Name = "Weapons"; weaponList.BackgroundTransparency = 1
+weaponList.Size = UDim2.fromScale(0.26, 1); weaponList.Parent = invBody
+local wl = Instance.new("UIListLayout"); wl.Padding = UDim.new(0.02, 0); wl.SortOrder = Enum.SortOrder.LayoutOrder; wl.Parent = weaponList
+local invPanel = UI.Panel({ Parent = invBody, Name = "Preview", Size = UDim2.fromScale(0.72, 1), Position = UDim2.fromScale(0.28, 0), Color = C.Panel, Stroke = C.Cyan })
+local _, setInvPreview = weaponPreview(invPanel, UDim2.fromScale(0.62, 0.56), UDim2.fromScale(0.02, 0.02), true)
+local invName = UI.Label({ Parent = invPanel, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.34, 0.1), Position = UDim2.fromScale(0.64, 0.05), AlignX = Enum.TextXAlignment.Left, MaxSize = 30 })
+local invRarity = UI.Label({ Parent = invPanel, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.34, 0.06), Position = UDim2.fromScale(0.64, 0.16), AlignX = Enum.TextXAlignment.Left, MaxSize = 20 })
+local invInfo = UI.Label({ Parent = invPanel, Text = "", Font = UI.Fonts.Body, Color = C.Subtext, Size = UDim2.fromScale(0.34, 0.3), Position = UDim2.fromScale(0.64, 0.24), AlignX = Enum.TextXAlignment.Left, AlignY = Enum.TextYAlignment.Top, MaxSize = 16 })
+local optionRow = Instance.new("Frame"); optionRow.Name = "Options"; optionRow.BackgroundTransparency = 1
+optionRow.Size = UDim2.fromScale(0.96, 0.2); optionRow.Position = UDim2.fromScale(0.02, 0.62); optionRow.Parent = invPanel
+local ol = Instance.new("UIListLayout"); ol.FillDirection = Enum.FillDirection.Horizontal; ol.Padding = UDim.new(0.02, 0); ol.SortOrder = Enum.SortOrder.LayoutOrder; ol.Parent = optionRow
+local invAction = UI.Button({ Parent = invPanel, Name = "Action", Text = "EQUIP", Size = UDim2.fromScale(0.34, 0.11), Position = UDim2.fromScale(0.97, 0.96), AnchorPoint = Vector2.new(1, 1), Accent = C.Cyan, MaxSize = 24 })
+
+local invWeapon = SkinConfig.WeaponOrder[1]
+local invChoice: string? = nil -- nil = default look
+local renderInventory: () -> ()
+
+local function weaponOwners(weaponId: string): string
+	local names = {}
+	for _, id in ipairs(HeroConfig.HeroOrder) do
+		if HeroConfig.Heroes[id].WeaponId == weaponId then table.insert(names, HeroConfig.Heroes[id].DisplayName) end
+	end
+	return table.concat(names, ", ")
+end
+
+for i, weaponId in ipairs(SkinConfig.WeaponOrder) do
+	local b = UI.Button({ Parent = weaponList, Name = weaponId, Text = SkinConfig.WeaponNames[weaponId], Size = UDim2.fromScale(1, 0.145), Accent = C.Cyan, MaxSize = 18 })
+	b.LayoutOrder = i
+	b.MouseButton1Click:Connect(function()
+		invWeapon = weaponId
+		invChoice = SkinConfig.EquippedFor(player, weaponId)
+		renderInventory()
+	end)
+end
+
+renderInventory = function()
+	-- weapon list highlight
+	for _, b in ipairs(weaponList:GetChildren()) do
+		if b:IsA("TextButton") then b.BackgroundColor3 = b.Name == invWeapon and C.PanelLight or C.Panel end
+	end
+	local equipped = SkinConfig.EquippedFor(player, invWeapon)
+	-- options: default + each skin for this weapon
+	for _, c in ipairs(optionRow:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+	local options: { string? } = { false :: any }
+	for _, s in ipairs(SkinConfig.ForWeapon(invWeapon)) do table.insert(options, s.Id) end
+	for i, opt in ipairs(options) do
+		local id = opt ~= false and opt or nil
+		local skin = id and SkinConfig.Skins[id]
+		local rarity = skin and SkinConfig.Rarities[skin.Rarity]
+		local label = skin and skin.Name or "Default"
+		local owned = id == nil or ownsSkin(id)
+		local tag = (equipped == id) and "  [ON]" or (owned and "" or "  [LOCKED]")
+		local b = UI.Button({ Parent = optionRow, Name = "Opt" .. i, Text = label .. tag, Size = UDim2.fromScale(0.32, 1), Accent = rarity and rarity.Color or C.Subtext, MaxSize = 16 })
+		b.LayoutOrder = i
+		if invChoice == id then b.BackgroundColor3 = C.PanelLight end
+		b.MouseButton1Click:Connect(function()
+			invChoice = id
+			renderInventory()
+		end)
+	end
+	-- preview + details
+	setInvPreview(invWeapon, invChoice)
+	local skin = invChoice and SkinConfig.Skins[invChoice]
+	if skin then
+		local rarity = SkinConfig.Rarities[skin.Rarity]
+		invName.Text = skin.Name; invName.TextColor3 = rarity.Color
+		invRarity.Text = rarity.Name; invRarity.TextColor3 = rarity.Color
+		invInfo.Text = string.format("For: %s\nCosmetic only - same damage, range and speed.%s", weaponOwners(invWeapon),
+			skin.Rarity == "Legendary" and "\nAnimated glow + coloured bullet trails." or "")
+	else
+		invName.Text = SkinConfig.WeaponNames[invWeapon]; invName.TextColor3 = C.Text
+		invRarity.Text = "DEFAULT"; invRarity.TextColor3 = C.Subtext
+		invInfo.Text = "For: " .. weaponOwners(invWeapon)
+	end
+	-- action button
+	if invChoice ~= nil and not ownsSkin(invChoice) then
+		local price = skinPrices[invChoice] or SkinConfig.Rarities[SkinConfig.Skins[invChoice].Rarity].PriceRobux
+		invAction.Text = "BUY  R$ " .. price
+	elseif equipped == invChoice then
+		invAction.Text = "EQUIPPED"
+	else
+		invAction.Text = invChoice and "EQUIP" or "USE DEFAULT"
+	end
+end
+
+local equipping = false
+invAction.MouseButton1Click:Connect(function()
+	if equipping then return end
+	local equipped = SkinConfig.EquippedFor(player, invWeapon)
+	if invChoice ~= nil and not ownsSkin(invChoice) then
+		BuySkin:FireServer(invChoice)
+		return
+	end
+	if equipped == invChoice then return end
+	equipping = true
+	local ok, res = pcall(function() return EquipSkin:InvokeServer(invWeapon, invChoice) end)
+	equipping = false
+	if ok and typeof(res) == "table" and res.Ok then
+		toast(invChoice and (SkinConfig.Skins[invChoice].Name .. " equipped") or "Default look equipped", C.Cyan)
+	else
+		toast((ok and typeof(res) == "table" and res.Reason) or "Couldn't equip - try again", C.Red)
+	end
+end)
+
+openInventory = function(weaponId: string?, skinId: string?)
+	-- default to the selected hero's weapon
+	local hero = HeroConfig.Heroes[profile.SelectedHero or ""]
+	invWeapon = weaponId or (hero and hero.WeaponId) or invWeapon
+	invChoice = skinId or SkinConfig.EquippedFor(player, invWeapon)
+	renderInventory()
+	showModal(invDim)
+end
+invBtn.MouseButton1Click:Connect(function() openInventory(nil, nil) end)
+local function onSkinsChanged()
+	refreshSkinCards()
+	if invDim.Visible then renderInventory() end
+end
+player:GetAttributeChangedSignal("OwnedSkins"):Connect(onSkinsChanged)
+player:GetAttributeChangedSignal("EquippedSkins"):Connect(onSkinsChanged)
 
 OpenShop.OnClientEvent:Connect(function()
 	if kitFrame and kitOpenSize then

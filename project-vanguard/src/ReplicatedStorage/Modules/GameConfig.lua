@@ -113,6 +113,12 @@ GameConfig.Progression = {
 	ReceiptsKept = 100,       -- Robux receipt IDs remembered per player (stops double-granting)
 }
 
+-- Cosmetics (Phase 6): weapon skins are Robux-only and purely visual.
+GameConfig.Cosmetics = {
+	StudioOwnAllSkins = true, -- Studio playtests only: every skin counts as owned (not saved) so they can be previewed/equipped
+	EquipCooldown = 0.3,
+}
+
 function GameConfig.GetMinPlayers(modeId: string): number
 	local mode = GameConfig.Modes[modeId]
 	if GameConfig.IsStudio and GameConfig.StudioSoloTesting then
