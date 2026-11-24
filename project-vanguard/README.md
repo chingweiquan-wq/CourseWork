@@ -72,3 +72,11 @@ The live game lives in Studio (place 90633802455621); models, maps and UI are no
 | Volt | LightningGauntlet | 117517941331379 | 133295735736093 | 138525194415718 |
 
 Third-party kits included in `src/StarterGui`: Premium Health Bar, Clean Shop GUI (by @roary16).
+
+### Phase 9.1 - Lobby cleanup + Character Select redesign
+- Removed the duplicate shop NPC (kept "Isaac Shopkeeper"; the extra one is parked in ServerStorage.UnusedLobby).
+- Hall of Fame boards (Top Supporters / Top Ranked / Most Kills) moved onto the back window wall, facing the spawn row.
+- Lobby hero statues turned to face into the room; the tree blocking the walkway moved aside.
+- Character Select rebuilt from the mockup: 3D statue portrait cards (name, role, Selected / Available / token price),
+  hero sheet with "NAME - ROLE", "WEAPON - HP - SPD", description, ABILITIES rows with key badges (LMB/SHIFT/E/Q)
+  and a SELECT CHARACTER / UNLOCK button. Portraits re-clone once their meshes finish loading.

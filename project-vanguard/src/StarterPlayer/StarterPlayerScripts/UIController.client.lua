@@ -239,69 +239,165 @@ end
 ---------------------------------------------------------------- CHARACTERS
 local charGui = UI.ScreenGui("CharacterUI", playerGui, 10)
 local charDim, charBody = makeModal(charGui, "CHARACTERS", C.Magenta)
-local grid = Instance.new("Frame"); grid.Name = "Grid"; grid.BackgroundTransparency = 1; grid.Size = UDim2.fromScale(0.5, 1); grid.Parent = charBody
-local gl = Instance.new("UIGridLayout"); gl.CellSize = UDim2.fromScale(0.31, 0.46); gl.CellPadding = UDim2.fromScale(0.03, 0.04); gl.SortOrder = Enum.SortOrder.LayoutOrder; gl.Parent = grid
-local detail = UI.Panel({ Parent = charBody, Name = "Detail", Size = UDim2.fromScale(0.47, 1), Position = UDim2.fromScale(0.53, 0), Color = C.Panel, Stroke = C.Magenta })
-local dName = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.11), Position = UDim2.fromScale(0.05, 0.03), AlignX = Enum.TextXAlignment.Left, MaxSize = 40 })
-local dMeta = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.9, 0.07), Position = UDim2.fromScale(0.05, 0.14), AlignX = Enum.TextXAlignment.Left, MaxSize = 18, Rich = true })
-local dDesc = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Body, Size = UDim2.fromScale(0.9, 0.07), Position = UDim2.fromScale(0.05, 0.22), AlignX = Enum.TextXAlignment.Left, MaxSize = 18 })
-local dAbil = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Body, Size = UDim2.fromScale(0.9, 0.48), Position = UDim2.fromScale(0.05, 0.3), AlignX = Enum.TextXAlignment.Left, AlignY = Enum.TextYAlignment.Top, MaxSize = 17, Rich = true })
-local dStatus = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.5, 0.08), Position = UDim2.fromScale(0.05, 0.86), AlignX = Enum.TextXAlignment.Left, MaxSize = 22 })
-local dAction = UI.Button({ Parent = detail, Name = "Action", Text = "SELECT", Size = UDim2.fromScale(0.38, 0.1), Position = UDim2.fromScale(0.95, 0.95), AnchorPoint = Vector2.new(1, 1), Accent = C.Magenta, MaxSize = 24 })
+-- Phase 9 redesign (mockup): portrait cards on the left, hero sheet on the right.
+-- Cards show a live 3D render of the hero's statue, name, role and status (Selected / Available / price).
+local Labels = require(Modules.ControlConfig).Labels
+local HeroAssetsFolder = ReplicatedStorage:FindFirstChild("HeroAssets")
+
+local function heroPortrait(parent: Instance, heroId: string, size: UDim2, pos: UDim2, framing: number): ViewportFrame
+	local vf = Instance.new("ViewportFrame")
+	vf.Name = "Portrait"
+	vf.BackgroundTransparency = 1
+	vf.Size = size
+	vf.Position = pos
+	vf.Ambient = Color3.fromRGB(150, 150, 170)
+	vf.LightColor = Color3.fromRGB(255, 255, 255)
+	vf.LightDirection = Vector3.new(0.4, -0.6, 1)
+	local cam = Instance.new("Camera")
+	cam.FieldOfView = 32
+	cam.CFrame = CFrame.lookAt(Vector3.new(0, 4.6, -framing), Vector3.new(0, 4.2, 0))
+	cam.Parent = vf
+	vf.CurrentCamera = cam
+	local tpl = HeroAssetsFolder and HeroAssetsFolder:FindFirstChild("Statues") and HeroAssetsFolder.Statues:FindFirstChild(heroId)
+	local function fill()
+		local old = vf:FindFirstChildOfClass("Model")
+		if old then old:Destroy() end
+		if tpl then
+			local m = tpl:Clone()
+			m:PivotTo(CFrame.new())
+			m.Parent = vf
+		end
+	end
+	fill()
+	vf.Parent = parent
+	-- meshes may still be downloading on first open: re-clone once they are in memory
+	if tpl then
+		task.spawn(function()
+			pcall(function() game:GetService("ContentProvider"):PreloadAsync({ tpl }) end)
+			if vf.Parent then fill() end
+		end)
+	end
+	return vf
+end
+
+local grid = Instance.new("Frame"); grid.Name = "Grid"; grid.BackgroundTransparency = 1; grid.Size = UDim2.fromScale(0.55, 1); grid.Parent = charBody
+local gl = Instance.new("UIGridLayout"); gl.CellSize = UDim2.fromScale(0.315, 0.475); gl.CellPadding = UDim2.fromScale(0.025, 0.05); gl.SortOrder = Enum.SortOrder.LayoutOrder; gl.Parent = grid
+
+local detail = UI.Panel({ Parent = charBody, Name = "Detail", Size = UDim2.fromScale(0.43, 1), Position = UDim2.fromScale(0.57, 0), Color = C.Panel, Stroke = C.Magenta })
+local dName = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.1), Position = UDim2.fromScale(0.05, 0.03), AlignX = Enum.TextXAlignment.Left, MaxSize = 36, Rich = true })
+local dMeta = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.9, 0.055), Position = UDim2.fromScale(0.05, 0.13), AlignX = Enum.TextXAlignment.Left, MaxSize = 17 })
+local dDesc = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Body, Size = UDim2.fromScale(0.9, 0.09), Position = UDim2.fromScale(0.05, 0.19), AlignX = Enum.TextXAlignment.Left, AlignY = Enum.TextYAlignment.Top, MaxSize = 16 })
+UI.Label({ Parent = detail, Text = "ABILITIES", Font = UI.Fonts.Title, Color = C.Magenta, Size = UDim2.fromScale(0.9, 0.05), Position = UDim2.fromScale(0.05, 0.29), AlignX = Enum.TextXAlignment.Left, MaxSize = 18 })
+
+-- one row per ability: key badge + name (+ cooldown) + short text
+local abilityRows: { [string]: { Key: TextLabel, Name: TextLabel, Text: TextLabel } } = {}
+for i, slot in ipairs({ "Primary", "Dash", "Skill", "Ultimate" }) do
+	local y = 0.34 + (i - 1) * 0.115
+	local badge = UI.Panel({ Parent = detail, Name = slot .. "Key", Size = UDim2.fromScale(0.17, 0.075), Position = UDim2.fromScale(0.05, y + 0.012), Color = C.PanelLight, Stroke = C.Magenta, Corner = 6 })
+	local key = UI.Label({ Parent = badge, Text = slot == "Primary" and "LMB" or (Labels[slot] or slot), Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.8), Position = UDim2.fromScale(0.05, 0.1), MaxSize = 16 })
+	local name = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.7, 0.05), Position = UDim2.fromScale(0.25, y), AlignX = Enum.TextXAlignment.Left, MaxSize = 17, Rich = true })
+	local text = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Body, Color = C.Subtext, Size = UDim2.fromScale(0.72, 0.07), Position = UDim2.fromScale(0.25, y + 0.045), AlignX = Enum.TextXAlignment.Left, AlignY = Enum.TextYAlignment.Top, MaxSize = 14 })
+	text.TextWrapped = true
+	abilityRows[slot] = { Key = key, Name = name, Text = text }
+end
+-- same text size on every ability description (TextScaled would shrink long lines more than short ones)
+local function syncAbilityText()
+	local sz = math.clamp(math.floor(detail.AbsoluteSize.Y * 0.029), 8, 15)
+	for _, r in pairs(abilityRows) do
+		r.Text.TextScaled = false
+		r.Text.TextSize = sz
+	end
+end
+detail:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncAbilityText)
+syncAbilityText()
+local dStatus = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.045), Position = UDim2.fromScale(0.05, 0.815), MaxSize = 16 })
+local dAction = UI.Button({ Parent = detail, Name = "Action", Text = "SELECT CHARACTER", Size = UDim2.fromScale(0.9, 0.09), Position = UDim2.fromScale(0.5, 0.975), AnchorPoint = Vector2.new(0.5, 1), Accent = C.Magenta, MaxSize = 24 })
 local viewedHero = HeroConfig.HeroOrder[1]
 
 local function isUnlocked(id: string): boolean
 	return table.find(profile.UnlockedHeroes, id) ~= nil
 end
 
+local cardRefs: { [string]: { Card: TextButton, Stroke: UIStroke?, Status: TextLabel } } = {}
+
+local function highlightViewed()
+	for id, refs in pairs(cardRefs) do
+		if refs.Stroke then
+			refs.Stroke.Thickness = (id == viewedHero) and 4 or 2
+			refs.Stroke.Transparency = (id == viewedHero) and 0 or 0.35
+		end
+	end
+end
+
 local function showHero(id: string)
 	viewedHero = id
 	local h = HeroConfig.Heroes[id]
-	dName.Text = h.DisplayName; dName.TextColor3 = h.Color
-	dMeta.Text = string.format("%s  |  %s  |  HP %d  |  SPD %d", string.upper(h.Role), h.Weapon, h.Stats.Health, h.Stats.WalkSpeed)
+	dName.Text = string.format("<font color=\"%s\">%s</font>  <font color=\"#8c96b9\">-  %s</font>", hex(h.Color), h.DisplayName, string.upper(h.Role))
+	dMeta.Text = string.format("%s  -  HP %d  -  SPD %d", string.upper(h.Weapon), h.Stats.Health, h.Stats.WalkSpeed)
 	dDesc.Text = h.Description
 	local a = h.Abilities
-	dAbil.Text = string.format(
-		"<b>LMB  %s</b>\n%s\n\n<b>SHIFT  %s</b>  (%ds)\n%s\n\n<b>E  %s</b>  (%ds)\n%s\n\n<b>Q  %s</b>  (ULT)\n%s",
-		a.Primary.Name, a.Primary.Text, a.Dash.Name, a.Dash.Cooldown, a.Dash.Text, a.Skill.Name, a.Skill.Cooldown, a.Skill.Text, a.Ultimate.Name, a.Ultimate.Text)
-	if isUnlocked(id) then
-		dStatus.Text = (profile.SelectedHero == id) and "SELECTED" or "UNLOCKED"
-		dStatus.TextColor3 = C.Green
-		dAction.Text = "SELECT"
-	else
-		dStatus.Text = string.format("LOCKED  -  %d TOKENS", h.Price)
-		dStatus.TextColor3 = C.Gold
-		dAction.Text = "BUY"
+	for slot, row in pairs(abilityRows) do
+		local ab = a[slot]
+		if ab then
+			local cd = ""
+			if slot == "Ultimate" then cd = "  <font color=\"#ffc83c\">ULT</font>"
+			elseif ab.Cooldown then cd = string.format("  <font color=\"#8c96b9\">%ds</font>", ab.Cooldown) end
+			row.Name.Text = ab.Name .. cd
+			row.Text.Text = ab.Text
+		end
 	end
+	if isUnlocked(id) then
+		if profile.SelectedHero == id then
+			dStatus.Text = "CURRENTLY SELECTED"; dStatus.TextColor3 = C.Green
+			dAction.Text = "SELECTED"
+		else
+			dStatus.Text = "AVAILABLE"; dStatus.TextColor3 = C.Cyan
+			dAction.Text = "SELECT CHARACTER"
+		end
+	else
+		dStatus.Text = string.format("LOCKED  -  %d TOKENS  (you have %d)", h.Price, profile.Tokens)
+		dStatus.TextColor3 = C.Gold
+		dAction.Text = string.format("UNLOCK  -  %d TOKENS", h.Price)
+	end
+	highlightViewed()
 end
 
 for i, id in ipairs(HeroConfig.HeroOrder) do
 	local h = HeroConfig.Heroes[id]
 	local card = UI.Button({ Parent = grid, Name = id, Text = "", Accent = h.Color, Color = C.Panel })
 	card.LayoutOrder = i
-	local swatch = UI.Panel({ Parent = card, Size = UDim2.fromScale(1, 0.55), Color = h.Color, Transparency = 0.35, Corner = 6 })
-	swatch.Active = false
-	UI.Label({ Parent = swatch, Text = string.sub(h.DisplayName, 1, 1), Font = UI.Fonts.Title, Size = UDim2.fromScale(1, 0.9), MaxSize = 60 })
-	UI.Label({ Parent = card, Text = h.DisplayName, Font = UI.Fonts.Title, Size = UDim2.fromScale(1, 0.2), Position = UDim2.fromScale(0, 0.6), MaxSize = 24 })
-	UI.Label({ Parent = card, Name = "Sub", Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(1, 0.16), Position = UDim2.fromScale(0, 0.82), MaxSize = 14 })
+	card.ClipsDescendants = true
+	local pad = card:FindFirstChildOfClass("UIPadding"); if pad then pad:Destroy() end -- full-bleed portrait
+	-- role-coloured backdrop + 3D statue portrait
+	local back = UI.Panel({ Parent = card, Name = "Backdrop", Size = UDim2.fromScale(1, 0.64), Color = h.Color, Transparency = 0.55, Corner = 6 })
+	back.Active = false
+	local grad = Instance.new("UIGradient")
+	grad.Rotation = 90
+	grad.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 0.9) })
+	grad.Parent = back
+	heroPortrait(card, id, UDim2.fromScale(1, 0.64), UDim2.fromScale(0, 0), 14)
+	UI.Label({ Parent = card, Text = h.DisplayName, Font = UI.Fonts.Title, Color = h.Color, Size = UDim2.fromScale(0.9, 0.14), Position = UDim2.fromScale(0.05, 0.645), MaxSize = 22 })
+	UI.Label({ Parent = card, Text = string.upper(h.Role), Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.9, 0.09), Position = UDim2.fromScale(0.05, 0.785), MaxSize = 14 })
+	local status = UI.Label({ Parent = card, Name = "Sub", Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.1), Position = UDim2.fromScale(0.05, 0.88), MaxSize = 14 })
+	cardRefs[id] = { Card = card, Stroke = card:FindFirstChildOfClass("UIStroke"), Status = status }
 	card.MouseButton1Click:Connect(function() showHero(id) end)
 end
 
 local function refreshCards()
 	for _, id in ipairs(HeroConfig.HeroOrder) do
 		local h = HeroConfig.Heroes[id]
-		local card = grid:FindFirstChild(id)
-		local sub = card and card:FindFirstChild("Sub")
-		if sub then
+		local refs = cardRefs[id]
+		if refs then
 			if profile.SelectedHero == id then
-				sub.Text = "SELECTED"
+				refs.Status.Text = "SELECTED"; refs.Status.TextColor3 = C.Green
 			elseif isUnlocked(id) then
-				sub.Text = string.upper(h.Role)
+				refs.Status.Text = "AVAILABLE"; refs.Status.TextColor3 = C.Cyan
 			else
-				sub.Text = "LOCKED  " .. h.Price
+				refs.Status.Text = h.Price .. " TOKENS"; refs.Status.TextColor3 = C.Gold
 			end
 		end
 	end
+	highlightViewed()
 end
 
 -- Buying a hero with tokens: click once to see the price, click again within 3s to confirm.
