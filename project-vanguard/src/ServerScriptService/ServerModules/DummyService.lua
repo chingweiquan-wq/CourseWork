@@ -13,7 +13,7 @@ local CombatService = require(script.Parent.CombatService)
 local DummyService = {}
 
 local function enabledFor(match: any): boolean
-	return GameConfig.IsStudio and GameConfig.StudioSoloTesting and GameConfig.Combat.StudioTrainingDummies > 0 and #match.Players == 1
+	return GameConfig.IsStudio and GameConfig.StudioSoloTesting and GameConfig.Combat.StudioTrainingDummies > 0 and #match.Players == 1 and #(match.Bots or {}) == 0 -- Phase 9: no dummies when bots play
 end
 
 local function spawnDummy(match: any, folder: Folder, team: string, spawnGroup: string, index: number)

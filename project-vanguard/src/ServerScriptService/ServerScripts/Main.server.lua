@@ -8,6 +8,8 @@ local LobbyService = require(ServerModules.LobbyService)
 local CharacterService = require(ServerModules.CharacterService)
 local CombatService = require(ServerModules.CombatService)
 local DummyService = require(ServerModules.DummyService)
+local BotService = require(ServerModules.BotService)
+local MovementGuard = require(ServerModules.MovementGuard)
 local LobbyDisplayService = require(ServerModules.LobbyDisplayService)
 local AbilityService = require(ServerModules.AbilityService)
 local ObjectiveService = require(ServerModules.ObjectiveService)
@@ -30,7 +32,9 @@ SkinService.Init()      -- weapon skins: ownership, equip, Robux purchases
 SettingsService.Init()  -- saved audio volumes (Phase 7)
 LeaderboardService.Init() -- MOST KILLS + TOP SUPPORTERS boards (Phase 8)
 DummyService.Init()
+BotService.Init()       -- Phase 9: hero bots for Casual fill + 1v1 Practice
+MovementGuard.Init()    -- Phase 9: pulls back teleport exploits in matches
 LobbyDisplayService.Init()
 CharacterService.Init() -- loads characters last (auto-respawn is off)
 
-print("[PROJECT VANGUARD] Server ready - Phase 8")
+print("[PROJECT VANGUARD] Server ready - Phase 9")

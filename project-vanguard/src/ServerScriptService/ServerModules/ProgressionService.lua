@@ -167,6 +167,11 @@ local function rememberReceipt(pr: any, purchaseId: string)
 	if count > Cfg.ReceiptsKept and oldestId then pr.Receipts[oldestId] = nil end
 end
 
+-- audit fix: receipts granted in memory whose save failed. Roblox retries the receipt; we must not report
+-- PurchaseGranted until a save actually succeeds.
+local unsavedReceipts: { [Player]: { [string]: boolean } } = {}
+Players.PlayerRemoving:Connect(function(p) unsavedReceipts[p] = nil end)
+
 local function processReceipt(receipt: any): Enum.ProductPurchaseDecision
 	local player = Players:GetPlayerByUserId(receipt.PlayerId)
 	if not player then return Enum.ProductPurchaseDecision.NotProcessedYet end -- Roblox retries next time they join
@@ -174,7 +179,15 @@ local function processReceipt(receipt: any): Enum.ProductPurchaseDecision
 	if not data then return Enum.ProductPurchaseDecision.NotProcessedYet end
 	local pr = data.Progress
 	local purchaseId = tostring(receipt.PurchaseId)
-	if pr.Receipts[purchaseId] then return Enum.ProductPurchaseDecision.PurchaseGranted end -- already given
+	if pr.Receipts[purchaseId] then
+		-- already granted; only confirm once it's really saved
+		local pending = unsavedReceipts[player]
+		if pending and pending[purchaseId] then
+			if not RankedService.SaveNow(player) then return Enum.ProductPurchaseDecision.NotProcessedYet end
+			pending[purchaseId] = nil
+		end
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
 
 	local handler = productHandlers[receipt.ProductId]
 	if not handler then
@@ -186,7 +199,10 @@ local function processReceipt(receipt: any): Enum.ProductPurchaseDecision
 	pr.RobuxSpent += tonumber(receipt.CurrencySpent) or 0
 	publish(player)
 	if not RankedService.SaveNow(player) then
-		-- the item is already granted in memory and the receipt is remembered, so a retry can't double-grant
+		-- granted in memory + receipt remembered (a retry can't double-grant), but NOT saved yet:
+		-- the retry path above will only confirm after a successful save
+		unsavedReceipts[player] = unsavedReceipts[player] or {}
+		unsavedReceipts[player][purchaseId] = true
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	return Enum.ProductPurchaseDecision.PurchaseGranted
@@ -251,7 +267,9 @@ local function onEnded(match: any)
 			local lines = {}
 			local total = 0
 			local reason = nil
-			if match.Abandoned then
+			if mode.NoRewards then
+				reason = "Practice match - no tokens" -- Phase 9: 1v1 Practice vs a bot
+			elseif match.Abandoned then
 				reason = "Abandoned match - no tokens"
 			elseif not isActive(entry, p) then
 				reason = "You were inactive - no tokens"
@@ -325,6 +343,13 @@ function ProgressionService.Init()
 	end)
 	for heroId, productId in pairs(ProductConfig.HeroProducts) do
 		ProgressionService.RegisterProduct(productId, function(player, _receipt, data)
+			if data.Progress.Unlocked[heroId] then
+				-- audit fix: bought with tokens while the Robux prompt was open -> give the token price back
+				local refund = HeroConfig.Heroes[heroId].Price or 0
+				data.Progress.Tokens += refund
+				Notify:FireClient(player, string.format("You already owned %s - %d tokens added instead.", HeroConfig.Heroes[heroId].DisplayName, refund))
+				return true
+			end
 			data.Progress.Unlocked[heroId] = true
 			Notify:FireClient(player, HeroConfig.Heroes[heroId].DisplayName .. " unlocked! Thanks for your support.")
 			return true

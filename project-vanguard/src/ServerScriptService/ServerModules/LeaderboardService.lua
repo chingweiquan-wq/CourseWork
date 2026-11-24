@@ -275,6 +275,7 @@ end
 
 ---------------------------------------------------------------- privacy toggle: hide/unhide right away on boards already shown
 local lastHidden: { [Player]: boolean } = {}
+local privacyPending: { [Player]: boolean } = {}
 local function applyPrivacy(player: Player)
 	local data = RankedService.GetData(player)
 	if not data then return end
@@ -287,13 +288,20 @@ local function applyPrivacy(player: Player)
 			e.Name = hidden and "Anonymous" or player.DisplayName
 		end
 	end
-	LeaderboardData:FireAllClients("Boards", publicLists())
 	sendSelf(player)
-	task.spawn(buildPodium, "Robux")
-	-- store the new flag soon (debounced so toggling can't spam DataStore writes)
-	task.delay(10, function()
-		if player.Parent == Players then writeScores(player) end
-	end)
+	-- audit fix: one pending broadcast + one pending write per player, so toggling can't spam
+	-- server-wide broadcasts, podium rebuilds or OrderedDataStore writes
+	if not privacyPending[player] then
+		privacyPending[player] = true
+		task.delay(3, function()
+			LeaderboardData:FireAllClients("Boards", publicLists())
+			buildPodium("Robux")
+		end)
+		task.delay(10, function()
+			privacyPending[player] = nil
+			if player.Parent == Players then writeScores(player) end
+		end)
+	end
 end
 
 ---------------------------------------------------------------- public
@@ -319,7 +327,7 @@ function LeaderboardService.Init()
 	Players.PlayerRemoving:Connect(function(p)
 		local data = RankedService.GetData(p) -- still available: RankedService releases the profile a moment later
 		if data then task.spawn(writeScores, p, data) end
-		task.delay(5, function() lastWritten[p] = nil; lastHidden[p] = nil end)
+		task.delay(15, function() lastWritten[p] = nil; lastHidden[p] = nil; privacyPending[p] = nil end)
 	end)
 
 	game:BindToClose(function()

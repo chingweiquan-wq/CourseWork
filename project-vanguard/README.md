@@ -15,7 +15,7 @@ The live game lives in Studio (place 90633802455621); models, maps and UI are no
 | 6 Cosmetics: 12 weapon skins (Arctic / Royal Gold / Void), inventory, shop SKINS tab, Robux skin purchases | Done |
 | 7 Audio & polish: music, TTS announcer + kill streaks, SFX, animations, UI transitions, neon VFX, saved volume settings | Done |
 | 8 Leaderboards: MOST KILLS + TOP SUPPORTERS (persistent, top 25, podium avatars, privacy opt-out) | Done |
-| 9 Testing & optimization | Not started |
+| 9 Testing & optimization: hero bots (Casual fill + 1v1 Practice), code audit fixes, mobile controls, test matrix | Done |
 
 ## Ranked
 - Saved in DataStore `VG_PlayerData` (Studio uses `STUDIO_` stores). Start 450 RP (Silver II), 100 RP per division.
@@ -47,6 +47,15 @@ The live game lives in Studio (place 90633802455621); models, maps and UI are no
 - Privacy: Settings > "TOP SUPPORTERS: HIDDEN" shows you as Anonymous (hologram on the podium). Stored as `spent*2 + hidden`, no extra reads.
 - Top 3 of each board stand on top of it as animated avatars. Tunables: `GameConfig.Leaderboards`.
 - Studio-only QA hook `ServerStorage.VG_LeaderboardTest` (AddKills / AddRobux / Refresh) - not created on live servers.
+
+## Bots, security & mobile (Phase 9)
+- **Bots** (`BotService`): play the real heroes, tagged `[BOT]`. Fill Casual to 5v5 (`GameConfig.Bots.CasualFillTo`; a lone Casual queue starts with bots after `CasualFillAfter` s) and power **1v1 Practice** (no tokens). Never in Ranked/Duel, never give leaderboard kills, never MVP.
+- Difficulty: `GameConfig.Bots.Difficulty` = Easy / Normal / Hard (presets: reaction, aim error, fire rate, headshot %, sight, strafe).
+- Bots use the same server weapon code as players (`CombatService.BotAttack`), hold/contest the core, pathfind, strafe, respawn; server owns their physics.
+- **Security fixes** from the code audit: server-checked headshots, shot origin must be visible from the head (8 studs max), fire-rate token bucket, `MovementGuard` pulls back teleports, receipts only confirmed after a real save, lost session lock = no fake saves, ranked forfeits give no RP, lock released if a player leaves mid-load, refund tokens if a hero is bought twice, leak + spam fixes.
+- **Mobile**: `MobileControls` (touch only, in matches): hold-to-fire, reload, dash/skill/ultimate with hero icons + cooldown dimming, via `InputBridge`.
+- Studio-only QA hooks: `ServerStorage.VG_BotTest` (Start mode N / End / Difficulty / Brains), `VG_LeaderboardTest`.
+- Known limits: weapon spread is applied by the client (small advantage for exploiters with 0 spread); Robux products need `developer-product:write` permission (or manual creation) before they can be created.
 
 ## Layout
 `src/` mirrors the Studio tree:

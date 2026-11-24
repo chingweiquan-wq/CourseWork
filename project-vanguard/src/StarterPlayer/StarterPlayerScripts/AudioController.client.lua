@@ -34,11 +34,10 @@ for _, kind in ipairs({ "Music", "Sfx", "Announcer" }) do
 end
 
 ---------------------------------------------------------------- voice lines (generated up front)
--- most common lines first; the rest follow in the background
-local preload = { AudioConfig.Special.Fight.Voice, AudioConfig.MultiKill[2].Voice, AudioConfig.Special.FirstBlood.Voice, AudioConfig.Special.Victory.Voice, AudioConfig.Special.Defeat.Voice }
-for _, group in ipairs({ AudioConfig.MultiKill, AudioConfig.Streak, AudioConfig.Special }) do
-	for _, l in pairs(group) do if l.Voice and not table.find(preload, l.Voice) then table.insert(preload, l.Voice) end end
-end
+-- Phase 9: only the most common lines are generated up front (text-to-speech is rate-limited per client);
+-- rarer callouts generate the first time they're needed
+local preload = { AudioConfig.Special.Fight.Voice, AudioConfig.MultiKill[2].Voice, AudioConfig.Special.FirstBlood.Voice,
+	AudioConfig.Special.Victory.Voice, AudioConfig.Special.Defeat.Voice, AudioConfig.Streak[3].Voice }
 task.spawn(Sfx.PreloadLines, preload)
 
 ---------------------------------------------------------------- music

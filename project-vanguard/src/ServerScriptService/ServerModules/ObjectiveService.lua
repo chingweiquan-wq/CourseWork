@@ -118,7 +118,7 @@ end
 local function step(core: CoreState, dt: number)
 	local match = core.Match
 	if match.State ~= "Live" then return end
-	local present: { [string]: { Player } } = { Alpha = {}, Bravo = {} }
+	local present: { [string]: { any } } = { Alpha = {}, Bravo = {} }
 	local onPointSet: { [Player]: boolean } = {}
 	for _, p in ipairs(match.Players) do
 		local team = match.TeamOf[p]
@@ -130,6 +130,18 @@ local function step(core: CoreState, dt: number)
 			onPointSet[p] = true
 		end
 	end
+	-- Phase 9: bots hold and contest the core like players
+	local botsOnPoint = {}
+	for _, bot in ipairs(match.Bots or {}) do
+		local m = bot.Model
+		local hum = m and m:FindFirstChildOfClass("Humanoid")
+		local root = m and m:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if present[bot.Team] and hum and hum.Health > 0 and root and onCore(core, root) then
+			table.insert(present[bot.Team], bot)
+			table.insert(botsOnPoint, bot)
+		end
+	end
+	for _, bot in ipairs(botsOnPoint) do bot.Stats.ObjTime += dt end
 	local nA, nB = #present.Alpha, #present.Bravo
 	local state
 	if nA > 0 and nB > 0 then

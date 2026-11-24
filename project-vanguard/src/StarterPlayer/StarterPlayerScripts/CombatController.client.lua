@@ -404,6 +404,14 @@ UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Controls.Fire then mouseDown = false end
 end)
 
+-- Phase 9: touch buttons (MobileControls) feed the same trigger + reload logic
+local InputBridge = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("InputBridge"))
+InputBridge.FireChanged:Connect(function(down: boolean)
+	mouseDown = down
+	if down then tryTrigger() end
+end)
+InputBridge.Reload:Connect(function() requestReload() end)
+
 RunService.Heartbeat:Connect(function()
 	if not mouseDown then return end
 	local w = getWeapon()

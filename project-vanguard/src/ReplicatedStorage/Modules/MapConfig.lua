@@ -7,7 +7,7 @@ MapConfig.Maps = {
 	NeonDistrict = {
 		Id = "NeonDistrict", DisplayName = "NEON DISTRICT", Size = "Small",
 		Description = "Night-time future city. Tight alleys, rooftops, plaza capture point.",
-		Modes = { Casual = true, Ranked = true, Duel = true },
+		Modes = { Casual = true, Ranked = true, Duel = true, Practice = true },
 		ObjectiveName = "Plaza Point",
 		MusicSoundName = "Music_NeonDistrict", -- placeholder Sound in SoundService.Music (Phase 7)
 		Lighting = { ClockTime = 0.2, Brightness = 1, Ambient = Color3.fromRGB(60, 40, 90), OutdoorAmbient = Color3.fromRGB(70, 50, 110), FogColor = Color3.fromRGB(30, 10, 50), FogEnd = 600, ExposureCompensation = 0,
@@ -16,7 +16,7 @@ MapConfig.Maps = {
 	IronfallBase = {
 		Id = "IronfallBase", DisplayName = "IRONFALL BASE", Size = "Medium",
 		Description = "Military industrial facility. Catwalks, bunkers, command zone.",
-		Modes = { Casual = true, Ranked = true, Duel = false },
+		Modes = { Casual = true, Ranked = true, Duel = false, Practice = false },
 		ObjectiveName = "Command Zone",
 		MusicSoundName = "Music_IronfallBase",
 		Lighting = { ClockTime = 17.6, Brightness = 1.6, Ambient = Color3.fromRGB(80, 72, 64), OutdoorAmbient = Color3.fromRGB(105, 90, 75), FogColor = Color3.fromRGB(150, 120, 90), FogEnd = 900, ExposureCompensation = -0.2,
@@ -25,7 +25,7 @@ MapConfig.Maps = {
 	SkylineCore = {
 		Id = "SkylineCore", DisplayName = "SKYLINE CORE", Size = "Medium",
 		Description = "Floating energy facility. Bridges, platforms, central core.",
-		Modes = { Casual = true, Ranked = true, Duel = true },
+		Modes = { Casual = true, Ranked = true, Duel = true, Practice = true },
 		ObjectiveName = "Energy Core",
 		MusicSoundName = "Music_SkylineCore",
 		Lighting = { ClockTime = 16.5, Brightness = 1.3, Ambient = Color3.fromRGB(70, 80, 100), OutdoorAmbient = Color3.fromRGB(85, 95, 120), FogColor = Color3.fromRGB(120, 145, 185), FogEnd = 1500, ExposureCompensation = -0.6,

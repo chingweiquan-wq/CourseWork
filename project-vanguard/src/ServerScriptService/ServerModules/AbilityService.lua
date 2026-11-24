@@ -114,6 +114,7 @@ local function recomputeSpeed(hum: Humanoid)
 		for id, s in pairs(list) do
 			if s.Expires > t then mult = math.min(mult, s.Mult) else list[id] = nil end
 		end
+		if next(list) == nil then slows[hum] = nil end -- audit fix: don't keep dead humanoids referenced
 	end
 	hum.WalkSpeed = ((base :: number) + add) * mult
 end
@@ -197,6 +198,9 @@ end
 
 function ctx.Slow(target: any, id: string, mult: number, duration: number)
 	local hum = target.Humanoid :: Humanoid
+	if not slows[hum] then
+		hum.Destroying:Connect(function() slows[hum] = nil end)
+	end
 	slows[hum] = slows[hum] or {}
 	slows[hum][id] = { Mult = mult, Expires = now() + duration }
 	recomputeSpeed(hum)

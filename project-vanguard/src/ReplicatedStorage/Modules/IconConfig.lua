@@ -37,7 +37,7 @@ IconConfig.Ids = {
 }
 
 -- Game modes -> icon names
-IconConfig.ModeIcon = { Casual = "Casual", Ranked = "Ranked", Duel = "Duel" }
+IconConfig.ModeIcon = { Casual = "Casual", Ranked = "Ranked", Duel = "Duel", Practice = "Duel" }
 
 function IconConfig.Get(name: string): string
 	local id = IconConfig.Ids[name]

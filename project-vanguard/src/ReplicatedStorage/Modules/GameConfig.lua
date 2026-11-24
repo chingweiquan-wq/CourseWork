@@ -27,8 +27,14 @@ GameConfig.Modes = {
 		TeamBased = false, MinPlayers = 2, MaxPlayers = 2, MaxPerTeam = 1, Ranked = false,
 		MatchDuration = 240, RespawnTime = 3, KillsToWin = 5,
 	},
+	-- Phase 9: solo 1v1 against a bot. No ranked rating, no tokens, no leaderboard kills.
+	Practice = {
+		Id = "Practice", DisplayName = "1v1 PRACTICE", Description = "Warm up 1v1 against a bot. First to 5 eliminations. No rewards.",
+		TeamBased = false, MinPlayers = 1, MaxPlayers = 1, MaxPerTeam = 1, Ranked = false,
+		MatchDuration = 240, RespawnTime = 3, KillsToWin = 5, Bots = 1, NoRewards = true, QueueCountdown = 2,
+	},
 }
-GameConfig.ModeOrder = { "Casual", "Ranked", "Duel" }
+GameConfig.ModeOrder = { "Casual", "Ranked", "Duel", "Practice" }
 
 GameConfig.Teams = {
 	Alpha = { Name = "ALPHA", Color = Color3.fromRGB(0, 200, 255) },
@@ -58,8 +64,9 @@ GameConfig.Combat = {
 	SpawnProtection = 2,       -- seconds of ForceField after spawning in a match
 	AssistWindow = 10,         -- damage within this many seconds before a kill earns an assist
 	StreakWindow = 8,          -- seconds allowed between kills to keep a multi-kill going (DOUBLE KILL etc.)
-	OriginTolerance = 14,      -- max studs between a shot's claimed origin and the shooter's head
+	OriginTolerance = 8,       -- max studs between a shot's claimed origin and the shooter's head (must also be in line of sight)
 	HitTolerance = 8,          -- max studs between a claimed hit point and the target's current position
+	HeadshotTolerance = 1.5,   -- extra studs a claimed HEAD hit may be off the ray before it counts as a body hit
 	CooldownTolerance = 0.8,   -- accept shots at 80% of the cooldown to absorb network jitter
 	MaxShotsPerSecond = 20,    -- hard cap regardless of weapon
 	StudioTrainingDummies = 2, -- enemy dummies spawned when testing solo in Studio (0 = off)
@@ -117,6 +124,22 @@ GameConfig.Progression = {
 GameConfig.Cosmetics = {
 	StudioOwnAllSkins = true, -- Studio playtests only: every skin counts as owned (not saved) so they can be previewed/equipped
 	EquipCooldown = 0.3,
+}
+
+-- Phase 9: bots. They play the real heroes (tagged [BOT]), fill Casual and power 1v1 Practice.
+-- Never in Ranked or Duel, never give leaderboard kills (only real-player kills count there).
+GameConfig.Bots = {
+	Difficulty = "Normal",   -- "Easy" | "Normal" | "Hard"  (change here to retune every bot)
+	MaxPerMatch = 9,
+	CasualFillTo = 10,       -- Casual matches are topped up with bots to this many fighters (5v5)
+	CasualFillAfter = 20,    -- seconds a lone Casual queue waits for real players before bots fill in
+	ThinkRate = 0.15,        -- seconds between bot decisions
+	Presets = {
+		--        reaction  aim error (deg)  fire-rate x  headshot %  sight range  strafe
+		Easy   = { Reaction = 0.85, AimError = 6.0, FireRate = 0.6, Headshot = 0.05, Sight = 110, Strafe = 0.3 },
+		Normal = { Reaction = 0.5,  AimError = 3.5, FireRate = 0.8, Headshot = 0.12, Sight = 170, Strafe = 0.6 },
+		Hard   = { Reaction = 0.28, AimError = 1.8, FireRate = 1.0, Headshot = 0.25, Sight = 240, Strafe = 0.85 },
+	},
 }
 
 function GameConfig.GetMinPlayers(modeId: string): number

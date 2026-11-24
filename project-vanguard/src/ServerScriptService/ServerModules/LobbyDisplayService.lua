@@ -20,6 +20,7 @@ local MODE_COLORS = {
 	Casual = Color3.fromRGB(0, 170, 255),
 	Ranked = Color3.fromRGB(170, 70, 255),
 	Duel = Color3.fromRGB(255, 120, 40),
+	Practice = Color3.fromRGB(80, 255, 160),
 }
 
 local function stroke(parent: Instance, thickness: number)
@@ -118,8 +119,9 @@ local function buildModeBoard(board: BasePart)
 	for i, modeId in ipairs(GameConfig.ModeOrder) do
 		local col = Instance.new("Frame")
 		col.BackgroundTransparency = 1
-		col.Size = UDim2.fromScale(0.32, 0.78)
-		col.Position = UDim2.fromScale(0.01 + (i - 1) * 0.33, 0.2)
+		local n = #GameConfig.ModeOrder
+		col.Size = UDim2.fromScale(1 / n - 0.01, 0.78)
+		col.Position = UDim2.fromScale(0.005 + (i - 1) / n, 0.2)
 		col.Parent = bg
 		icon(col, IconConfig.ModeIcon[modeId], UDim2.fromScale(0.8, 0.5), UDim2.fromScale(0.1, 0))
 		label(col, GameConfig.Modes[modeId].DisplayName, UDim2.fromScale(1, 0.17), UDim2.fromScale(0, 0.52), MODE_COLORS[modeId])
@@ -217,7 +219,9 @@ local function padTick(pads: { BasePart })
 		local modeId = pad:GetAttribute("QueueMode") :: string
 		for p in pairs(playersOnPad(pad)) do
 			seen[p] = modeId
-			if not MatchManager.IsInMatch(p) and Matchmaking.GetModeOf(p) ~= modeId then
+			-- audit fix: don't re-try (and re-notify) a Ranked join every tick while rank data is unavailable
+			local blocked = GameConfig.Modes[modeId] and GameConfig.Modes[modeId].Ranked and p:GetAttribute("RankedReady") ~= true
+			if not blocked and not MatchManager.IsInMatch(p) and Matchmaking.GetModeOf(p) ~= modeId then
 				Matchmaking.Join(p, modeId)
 				padQueued[p] = modeId
 			end

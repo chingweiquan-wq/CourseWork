@@ -1,6 +1,8 @@
 --!strict
 -- Matchmaking: server-authoritative queues for Casual / Ranked / Duel.
 -- Clients may only ask to Join(mode) or Leave; everything else is decided here.
+-- Phase 9: Casual is topped up with bots (and starts with bots if a lone player waits CasualFillAfter);
+-- 1v1 Practice starts almost instantly against one bot. Ranked/Duel stay real-players-only.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -18,6 +20,7 @@ local queues: { [string]: { Player } } = {}
 local countdownEndsAt: { [string]: number? } = {}
 local queueOf: { [Player]: string } = {}
 local lastRequest: { [Player]: number } = {}
+local joinedAt: { [Player]: number } = {}
 
 for _, modeId in ipairs(GameConfig.ModeOrder) do
 	queues[modeId] = {}
@@ -46,6 +49,7 @@ function Matchmaking.Leave(player: Player, silent: boolean?)
 	local modeId = queueOf[player]
 	if not modeId then return end
 	queueOf[player] = nil
+	joinedAt[player] = nil
 	local q = queues[modeId]
 	local idx = table.find(q, player)
 	if idx then table.remove(q, idx) end
@@ -71,6 +75,7 @@ function Matchmaking.Join(player: Player, modeId: any)
 	if queueOf[player] == modeId then return end
 	if queueOf[player] then Matchmaking.Leave(player, true) end
 	queueOf[player] = modeId
+	joinedAt[player] = now()
 	table.insert(queues[modeId], player)
 	sendUpdate(modeId)
 end
@@ -95,10 +100,12 @@ local function tick()
 		local minPlayers = GameConfig.GetMinPlayers(modeId)
 		local changed = false
 
-		if #q >= minPlayers then
-			local t = now()
+		local t = now()
+		-- Casual: a lone queue that waited long enough starts anyway, with bots filling the teams
+		local botFill = modeId == "Casual" and #q > 0 and (t - (joinedAt[q[1]] or t)) >= GameConfig.Bots.CasualFillAfter
+		if #q >= minPlayers or botFill then
 			if not countdownEndsAt[modeId] then
-				countdownEndsAt[modeId] = t + GameConfig.Queue.Countdown
+				countdownEndsAt[modeId] = t + (if botFill and #q < minPlayers then 3 else (mode.QueueCountdown or GameConfig.Queue.Countdown))
 				changed = true
 			end
 			if #q >= mode.MaxPlayers then
@@ -114,10 +121,17 @@ local function tick()
 				while #group < mode.MaxPlayers and #q > 0 do
 					local p = table.remove(q, 1) :: Player
 					queueOf[p] = nil
+					joinedAt[p] = nil
 					table.insert(group, p)
 				end
 				countdownEndsAt[modeId] = nil
-				local ok = MatchManager.StartMatch(modeId, group)
+				local bots = 0
+				if mode.Bots then
+					bots = mode.Bots -- 1v1 Practice
+				elseif modeId == "Casual" then
+					bots = math.max(0, GameConfig.Bots.CasualFillTo - #group)
+				end
+				local ok = MatchManager.StartMatch(modeId, group, { Bots = bots })
 				if ok then
 					for _, p in ipairs(group) do
 						QueueUpdate:FireClient(p, { InQueue = false, MatchFound = true })
@@ -129,6 +143,7 @@ local function tick()
 						if p.Parent == Players and not MatchManager.IsInMatch(p) then
 							table.insert(q, 1, p)
 							queueOf[p] = modeId
+							joinedAt[p] = t
 							Notify:FireClient(p, "All arenas are busy - you keep your place in the queue.")
 						end
 					end
@@ -158,6 +173,7 @@ function Matchmaking.Init()
 	Players.PlayerRemoving:Connect(function(p)
 		Matchmaking.Leave(p, true)
 		lastRequest[p] = nil
+		joinedAt[p] = nil
 	end)
 	task.spawn(function()
 		while true do

@@ -319,6 +319,10 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	elseif input.KeyCode == ControlConfig.Binds.Skill then use("Skill")
 	elseif input.KeyCode == ControlConfig.Binds.Ultimate then use("Ultimate") end
 end)
+-- Phase 9: touch buttons (MobileControls) use the same path
+require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("InputBridge")).Ability:Connect(function(slot: string)
+	if slot == "Dash" or slot == "Skill" or slot == "Ultimate" then use(slot) end
+end)
 
 ---------------------------------------------------------------- server-driven effects
 AbilityFx.OnClientEvent:Connect(function(data)

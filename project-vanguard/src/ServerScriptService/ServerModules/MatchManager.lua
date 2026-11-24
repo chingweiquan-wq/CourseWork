@@ -4,12 +4,15 @@
 -- Phase 2: records eliminations (K/D/A, streaks, first blood), duel kill limit, team-kill tiebreak.
 -- Phase 4: Scores = Hold-the-Core % (ObjectiveService), ObjTime per player, MVP, ranked team balancing,
 -- PlayerLeft event (RankedService applies leave penalties).
+-- Phase 9: bots - fill Casual / 1v1 Practice. Each bot is a record in match.Bots with its own team, stats
+-- and streak; BotService spawns and drives them. Bots never join Ranked and never count for leaderboards.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 
 local GameConfig = require(ReplicatedStorage.Modules.GameConfig)
 local MapConfig = require(ReplicatedStorage.Modules.MapConfig)
+local HeroConfig = require(ReplicatedStorage.Modules.HeroConfig)
 local MapService = require(script.Parent.MapService)
 local SpawnService = require(script.Parent.SpawnService)
 
@@ -36,6 +39,7 @@ export type Match = {
 	Winner: string?,
 	EndReason: string?,
 	Extra: { [string]: any }, -- scratch space for other services (ranked expectations, etc.)
+	Bots: { any }, -- Phase 9: server-only fighters (BotService runs them; records live here)
 }
 
 local MatchManager = {}
@@ -99,6 +103,10 @@ local function teamPayload(match: Match)
 		teams[team] = teams[team] or {}
 		table.insert(teams[team], p.DisplayName)
 	end
+	for _, bot in ipairs(match.Bots) do
+		teams[bot.Team] = teams[bot.Team] or {}
+		table.insert(teams[bot.Team], bot.Name)
+	end
 	return teams
 end
 
@@ -159,6 +167,45 @@ local function assignTeams(match: Match, players: { Player })
 	end
 end
 
+function MatchManager.GetBotByModel(match: Match, model: Model): any?
+	for _, bot in ipairs(match.Bots) do
+		if bot.Model == model then return bot end
+	end
+	return nil
+end
+
+-- Bots join the smaller team (team modes) or get their own solo slot (1v1 Practice).
+local BOT_NAMES = { "Nova", "Rex", "Kaito", "Blitz", "Echo", "Zara", "Onyx", "Pixel", "Raven", "Sol", "Vega", "Juno", "Axel", "Mira", "Dash" }
+local function addBots(match: Match, count: number)
+	local mode = GameConfig.Modes[match.Mode]
+	local heroIds = {}
+	for id in pairs(HeroConfig.Heroes) do table.insert(heroIds, id) end
+	table.sort(heroIds)
+	local names = shuffle(BOT_NAMES)
+	for i = 1, count do
+		local team
+		if mode.TeamBased then
+			local a, b = 0, 0
+			for _, t in pairs(match.TeamOf) do if t == "Alpha" then a += 1 else b += 1 end end
+			for _, bt in ipairs(match.Bots) do if bt.Team == "Alpha" then a += 1 else b += 1 end end
+			team = (a <= b) and "Alpha" or "Bravo"
+		else
+			team = "Solo" .. (#match.Players + i)
+			match.Scores[team] = 0
+		end
+		table.insert(match.Bots, {
+			Id = "bot" .. i,
+			Name = "[BOT] " .. names[((i - 1) % #names) + 1],
+			Team = team,
+			HeroId = heroIds[math.random(1, #heroIds)],
+			MatchId = match.Id,
+			Stats = { Kills = 0, Deaths = 0, Assists = 0, ObjTime = 0 },
+			Streak = { Streak = 0, Chain = 0, LastKill = -math.huge },
+			Model = nil,
+		})
+	end
+end
+
 function MatchManager.IsInMatch(player: Player): boolean
 	return matchOfPlayer[player] ~= nil
 end
@@ -195,12 +242,13 @@ end
 
 -- Called by CombatService whenever a combatant dies inside a match.
 -- killer may be nil (fell off the map with no recent attacker). victim is nil for training dummies.
-function MatchManager.RecordElimination(match: Match, killer: Player?, victim: Player?, victimName: string, assisters: { Player }, weaponName: string?, headshot: boolean?)
+-- Phase 9: killerBot / victimBot are bot records when a bot got the kill or was eliminated.
+function MatchManager.RecordElimination(match: Match, killer: Player?, victim: Player?, victimName: string, assisters: { Player }, weaponName: string?, headshot: boolean?, killerBot: any?, victimBot: any?)
 	if match.State ~= "Live" then return end
 	local t = now()
 	local payload: { [string]: any } = {
 		Victim = victimName,
-		VictimTeam = victim and match.TeamOf[victim] or nil,
+		VictimTeam = victim and match.TeamOf[victim] or (victimBot and victimBot.Team) or nil,
 		Weapon = weaponName or "Environment",
 		Headshot = headshot == true,
 	}
@@ -211,6 +259,11 @@ function MatchManager.RecordElimination(match: Match, killer: Player?, victim: P
 		match.Streaks[victim].Streak = 0
 		match.Streaks[victim].Chain = 0
 		setStatAttrs(victim, match)
+	elseif victimBot then
+		payload.VictimStreak = victimBot.Streak.Streak
+		victimBot.Stats.Deaths += 1
+		victimBot.Streak.Streak = 0
+		victimBot.Streak.Chain = 0
 	end
 
 	if killer and killer ~= victim and match.Stats[killer] then
@@ -227,6 +280,21 @@ function MatchManager.RecordElimination(match: Match, killer: Player?, victim: P
 		payload.KillerUserId = killer.UserId
 		if victim and match.TeamOf[victim] ~= team then emit("PlayerKill", match, killer, victim) end
 		payload.KillerTeam = team
+		payload.Streak = st.Streak
+		payload.Chain = st.Chain
+		if not match.FirstBloodTaken then
+			match.FirstBloodTaken = true
+			payload.FirstBlood = true
+		end
+	elseif killerBot and killerBot ~= victimBot then
+		local st = killerBot.Streak
+		killerBot.Stats.Kills += 1
+		st.Streak += 1
+		if t - st.LastKill <= GameConfig.Combat.StreakWindow then st.Chain += 1 else st.Chain = 1 end
+		st.LastKill = t
+		match.TeamKills[killerBot.Team] = (match.TeamKills[killerBot.Team] or 0) + 1
+		payload.Killer = killerBot.Name
+		payload.KillerTeam = killerBot.Team
 		payload.Streak = st.Streak
 		payload.Chain = st.Chain
 		if not match.FirstBloodTaken then
@@ -255,6 +323,8 @@ function MatchManager.RecordElimination(match: Match, killer: Player?, victim: P
 	local mode = GameConfig.Modes[match.Mode]
 	if killer and mode.KillsToWin and match.Stats[killer] and match.Stats[killer].Kills >= mode.KillsToWin then
 		MatchManager.EndMatch(match, "KillLimit", match.TeamOf[killer])
+	elseif killerBot and mode.KillsToWin and killerBot.Stats.Kills >= mode.KillsToWin then
+		MatchManager.EndMatch(match, "KillLimit", killerBot.Team)
 	end
 end
 
@@ -295,7 +365,11 @@ function MatchManager.EndMatch(match: Match, reason: string, forcedWinner: strin
 			statsByName[p.DisplayName] = { Kills = s.Kills, Deaths = s.Deaths, Assists = s.Assists, ObjTime = math.floor(s.ObjTime), Team = match.TeamOf[p] }
 		end
 	end
-	local mvp = pickMvp(match, winner)
+	for _, bot in ipairs(match.Bots) do
+		local s = bot.Stats
+		statsByName[bot.Name] = { Kills = s.Kills, Deaths = s.Deaths, Assists = s.Assists, ObjTime = math.floor(s.ObjTime), Team = bot.Team, Bot = true }
+	end
+	local mvp = pickMvp(match, winner) -- real players only
 	match.Extra.MvpUserId = mvp and mvp.UserId or nil -- ProgressionService pays the MVP bonus
 	local mvpPayload = nil
 	if mvp then
@@ -348,15 +422,20 @@ local function runMatch(match: Match)
 end
 
 -- Returns true if the match started. On false the caller should return players to the queue.
-function MatchManager.StartMatch(modeId: string, players: { Player }): boolean
+-- opts.Bots = how many bots to add (Casual fill / 1v1 Practice). Ranked never takes bots.
+function MatchManager.StartMatch(modeId: string, players: { Player }, opts: { Bots: number? }?): boolean
 	local mode = GameConfig.Modes[modeId]
 	if not mode then return false end
+	local botCount = (opts and opts.Bots or 0)
+	if mode.Ranked then botCount = 0 end
+	botCount = math.clamp(math.floor(botCount), 0, GameConfig.Bots.MaxPerMatch)
 
 	local valid = {}
 	for _, p in ipairs(players) do
 		if p.Parent == Players and not matchOfPlayer[p] then table.insert(valid, p) end
 	end
-	if #valid < GameConfig.GetMinPlayers(modeId) then return false end
+	if #valid == 0 then return false end
+	if #valid < GameConfig.GetMinPlayers(modeId) and botCount == 0 then return false end
 
 	local mapId = MapService.PickMap(modeId)
 	if not mapId then return false end
@@ -391,8 +470,10 @@ function MatchManager.StartMatch(modeId: string, players: { Player }): boolean
 		Winner = nil,
 		EndReason = nil,
 		Extra = {},
+		Bots = {},
 	}
 	assignTeams(match, valid)
+	addBots(match, botCount)
 	matches[match.Id] = match
 
 	for _, p in ipairs(valid) do
@@ -407,7 +488,7 @@ function MatchManager.StartMatch(modeId: string, players: { Player }): boolean
 		p:LoadCharacter() -- CharacterAdded hook below moves them onto the map
 	end
 
-	print(string.format("[MatchManager] Starting %s on %s with %d players (slot %d)", modeId, MapConfig.Maps[mapId].DisplayName, #valid, slot))
+	print(string.format("[MatchManager] Starting %s on %s with %d players + %d bots (slot %d)", modeId, MapConfig.Maps[mapId].DisplayName, #valid, #match.Bots, slot))
 	broadcast(match, { State = "PreMatch" })
 	emit("Started", match)
 	task.spawn(runMatch, match)
@@ -428,6 +509,7 @@ local function onPlayerLeft(player: Player)
 	-- If a side is now empty, the remaining side wins by forfeit.
 	local remaining: { [string]: number } = {}
 	for _, team in pairs(match.TeamOf) do remaining[team] = (remaining[team] or 0) + 1 end
+	for _, bot in ipairs(match.Bots) do remaining[bot.Team] = (remaining[bot.Team] or 0) + 1 end
 	local sideCount, lastTeam = 0, nil
 	for team in pairs(remaining) do sideCount += 1; lastTeam = team end
 	if #match.Players == 0 then

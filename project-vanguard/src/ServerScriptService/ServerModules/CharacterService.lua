@@ -139,6 +139,14 @@ function applyHeroLook(character: Model, heroId: string)
 	end
 end
 
+-- Phase 9: bots wear the same hero look + weapon model as players (default skins).
+function CharacterService.DressAsHero(model: Model, heroId: string)
+	local hero = HeroConfig.Heroes[heroId]
+	if not hero then return end
+	applyHeroLook(model, heroId)
+	buildWorldWeapon(model, hero.WeaponId, nil)
+end
+
 local function setupCharacter(player: Player, character: Model)
 	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
 	if not humanoid then return end

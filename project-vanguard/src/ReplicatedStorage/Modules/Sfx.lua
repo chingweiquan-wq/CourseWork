@@ -186,7 +186,7 @@ local function pump()
 					task.wait(math.min(1.5 * failures, 8)) -- back off while rate-limited
 				else
 					failures = 0
-					task.wait(0.35)
+					task.wait(1) -- pace requests so we stay under the text-to-speech rate limit
 				end
 			end
 		end

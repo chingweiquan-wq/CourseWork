@@ -198,15 +198,17 @@ end
 ---------------------------------------------------------------- PLAY MENU
 local playDim, playBody = makeModal(lobbyGui, "SELECT MODE", C.Cyan)
 playDim.Name = "PlayMenu"
-local modeAccents = { Casual = C.Cyan, Ranked = C.Magenta, Duel = C.Gold }
+local modeAccents = { Casual = C.Cyan, Ranked = C.Magenta, Duel = C.Gold, Practice = C.Green }
+local modeCount = #GameConfig.ModeOrder
 for i, modeId in ipairs(GameConfig.ModeOrder) do
 	local mode = GameConfig.Modes[modeId]
 	local accent = modeAccents[modeId]
-	local card = UI.Panel({ Parent = playBody, Name = modeId, Size = UDim2.fromScale(0.31, 0.95), Position = UDim2.fromScale((i - 1) * 0.345, 0), Stroke = accent, Color = C.Panel, Transparency = 0.05 })
+	local card = UI.Panel({ Parent = playBody, Name = modeId, Size = UDim2.fromScale(1 / modeCount - 0.02, 0.95), Position = UDim2.fromScale((i - 1) / modeCount + 0.01, 0), Stroke = accent, Color = C.Panel, Transparency = 0.05 })
 	local cardGrad = Instance.new("UIGradient"); cardGrad.Color = ColorSequence.new(accent:Lerp(Color3.new(0, 0, 0), 0.55), C.Panel); cardGrad.Rotation = 90; cardGrad.Parent = card
 	UI.Icon({ Parent = card, Icon = IconConfig.ModeIcon[modeId], Size = UDim2.fromScale(0.6, 0.36), Position = UDim2.fromScale(0.2, 0.02) })
 	UI.Label({ Parent = card, Text = mode.DisplayName, Font = UI.Fonts.Title, Color = accent, Size = UDim2.fromScale(0.9, 0.11), Position = UDim2.fromScale(0.05, 0.38), MaxSize = 38, StrokeSize = 2.5 })
 	local teamText = mode.TeamBased and string.format("%d-%d players  -  up to %dv%d", mode.MinPlayers, mode.MaxPlayers, mode.MaxPerTeam, mode.MaxPerTeam) or "2 players  -  free-for-all"
+	if mode.Bots then teamText = "You vs 1 bot  -  " .. GameConfig.Bots.Difficulty:upper() elseif modeId == "Casual" then teamText ..= "  -  bots fill empty slots" end
 	UI.Label({ Parent = card, Text = teamText, Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.9, 0.07), Position = UDim2.fromScale(0.05, 0.5), MaxSize = 18 })
 	UI.Label({ Parent = card, Text = mode.Description, Font = UI.Fonts.Body, Color = C.Text, Size = UDim2.fromScale(0.86, 0.14), Position = UDim2.fromScale(0.07, 0.58), MaxSize = 18 })
 	local maps = {}

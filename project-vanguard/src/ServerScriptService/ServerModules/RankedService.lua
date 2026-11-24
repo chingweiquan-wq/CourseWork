@@ -181,7 +181,21 @@ local function load(player: Player)
 				return data
 			end)
 		end, 3)
-		if player.Parent ~= Players then return end
+		if player.Parent ~= Players then
+			-- audit fix: they left while loading; release the lock we may have just taken
+			if ok and not lockedElsewhere and result then
+				pcall(function()
+					dataStore:UpdateAsync(key(player), function(old)
+						if typeof(old) == "table" and old.Lock and old.Lock.Job == JOB_ID then
+							old.Lock = nil
+							return old
+						end
+						return nil
+					end)
+				end)
+			end
+			return
+		end
 		if ok and not lockedElsewhere and result then
 			profile.Data = reconcile(result)
 			profile.Usable = true
@@ -201,19 +215,31 @@ local function save(player: Player, release: boolean): boolean
 	local profile = profiles[player]
 	if not profile or not profile.Usable then return false end
 	local snapshot = profile.Data
+	local cancelled = false
 	local ok, err = withRetry(function()
 		return dataStore:UpdateAsync(key(player), function(old)
 			local current = typeof(old) == "table" and old or nil
 			local lock = current and current.Lock
 			if lock and lock.Job ~= JOB_ID and os.time() - lock.Time < Cfg.LockTimeout then
+				cancelled = true
 				return nil -- someone else owns the record now; never overwrite it
 			end
+			cancelled = false
 			local out = table.clone(snapshot)
 			out.Lock = (not release) and { Job = JOB_ID, Time = os.time() } or nil
 			return out
 		end)
 	end)
-	if ok then
+	if ok and cancelled then
+		-- audit fix: another server took this player's session. Nothing was written, so stop using this
+		-- copy (no purchases/rewards can be "saved" into the void) and send the player to rejoin.
+		ok = false
+		profile.Usable = false
+		warn("[RankedService] lost session lock for " .. player.Name .. " - not saving")
+		if not release and player.Parent == Players then
+			task.defer(function() player:Kick("Your data was opened in another server. Please rejoin.") end)
+		end
+	elseif ok then
 		profile.Dirty = false
 	else
 		warn("[RankedService] save failed for " .. player.Name .. ": " .. tostring(err))
@@ -317,7 +343,8 @@ local function onEnded(match: any)
 			local resultText = winner == nil and "D" or (winner == team and "W" or "L")
 			local k, d, a = statsOf(match, p)
 			local entry: HistoryEntry = { T = os.time(), Mode = match.Mode, Map = match.MapId, Result = resultText, K = k, D = d, A = a, Delta = nil }
-			if mode.Ranked and match.Extra.RankedExpected and not match.Extra.RankedSettled[p.UserId] then
+			-- audit fix: a forfeit (Abandoned) gives the remaining side no RP, so alts can't be used to farm rating
+			if mode.Ranked and match.Extra.RankedExpected and not match.Extra.RankedSettled[p.UserId] and not match.Abandoned then
 				match.Extra.RankedSettled[p.UserId] = true
 				local result = resultText == "W" and 1 or (resultText == "L" and 0 or 0.5)
 				local delta = ratingDelta(result, match.Extra.RankedExpected[team])
