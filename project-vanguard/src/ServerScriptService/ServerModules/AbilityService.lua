@@ -432,6 +432,28 @@ function AbilityService.Init()
 	end
 
 	CombatService.SetModifierProvider(AbilityService.GetModifiers)
+
+	-- aiming down sights: the client says when it aims; the server applies the walk-speed penalty
+	local SetAim = Remotes:FindFirstChild("SetAim") :: RemoteEvent?
+	if not SetAim then
+		local r = Instance.new("RemoteEvent"); r.Name = "SetAim"; r.Parent = Remotes
+		SetAim = r
+	end
+	local WeaponConfig = require(game:GetService("ReplicatedStorage").Modules.WeaponConfig)
+	;(SetAim :: RemoteEvent).OnServerEvent:Connect(function(p: Player, on: any)
+		if typeof(on) ~= "boolean" then return end
+		local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
+		if not hum or hum.Health <= 0 then return end
+		local w = WeaponConfig.Weapons[p:GetAttribute("WeaponId") or ""]
+		if on and (not w or w.NoAim) then return end
+		if not slows[hum] then
+			hum.Destroying:Connect(function() slows[hum] = nil end)
+			slows[hum] = {}
+		end
+		slows[hum].Aim = on and { Mult = (w and w.AimSpeedMult) or WeaponConfig.Aim.SpeedMult, Expires = math.huge } or nil
+		p:SetAttribute("Aiming", on)
+		recomputeSpeed(hum)
+	end)
 	CombatService.OnAttack(function(p) AbilityService.BreakCloak(p) end)
 	CombatService.OnDamageDealt(function(p, _target, dealt)
 		addCharge(p, dealt * GameConfig.Abilities.ChargePerDamage)

@@ -7,13 +7,16 @@ local InputBridge = {}
 local fire = Instance.new("BindableEvent")
 local reload = Instance.new("BindableEvent")
 local ability = Instance.new("BindableEvent")
+local aim = Instance.new("BindableEvent")
 
 InputBridge.FireChanged = fire.Event   -- (down: boolean)
 InputBridge.Reload = reload.Event      -- ()
 InputBridge.Ability = ability.Event    -- (slot: "Dash" | "Skill" | "Ultimate")
+InputBridge.AimChanged = aim.Event    -- (on: boolean)
 
 function InputBridge.SetFire(down: boolean) fire:Fire(down) end
 function InputBridge.PressReload() reload:Fire() end
 function InputBridge.PressAbility(slot: string) ability:Fire(slot) end
+function InputBridge.SetAim(on: boolean) aim:Fire(on) end
 
 return InputBridge

@@ -70,6 +70,14 @@ fireBtn.InputEnded:Connect(function(input)
 	end
 end)
 reloadBtn.Activated:Connect(function() InputBridge.PressReload() end)
+-- AIM: tap to toggle aiming down sights
+local aimBtn, aimLabel = circle("Aim", 0.1, UDim2.new(0.65, 0, 0.7, 0), C.Magenta, "AIM")
+local aiming = false
+aimBtn.Activated:Connect(function()
+	aiming = not aiming
+	aimLabel.TextColor3 = aiming and C.Gold or C.Magenta
+	InputBridge.SetAim(aiming)
+end)
 for slot, b in pairs(abilityButtons) do
 	b.Activated:Connect(function() InputBridge.PressAbility(slot) end)
 end
@@ -91,7 +99,10 @@ refreshIcons()
 local function refreshVisible()
 	local inMatch = player:GetAttribute("MatchId") ~= nil
 	gui.Enabled = inMatch
-	if not inMatch then InputBridge.SetFire(false) end
+	if not inMatch then
+		InputBridge.SetFire(false)
+		if aiming then aiming = false; aimLabel.TextColor3 = C.Magenta; InputBridge.SetAim(false) end
+	end
 end
 player:GetAttributeChangedSignal("MatchId"):Connect(refreshVisible)
 refreshVisible()

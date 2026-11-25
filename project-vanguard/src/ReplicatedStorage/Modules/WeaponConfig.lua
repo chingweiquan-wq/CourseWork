@@ -68,6 +68,15 @@ WeaponConfig.Weapons = {
 	},
 }
 
+-- Aiming (hold right-click): zoom, tighter spread and slower walking. Weapons can override any value;
+-- NoAim = this weapon can't aim (melee blades, the gauntlet). Scope = sniper scope overlay.
+WeaponConfig.Aim = { Fov = 58, SpreadMult = 0.35, SpeedMult = 0.7 }
+WeaponConfig.Weapons.PrecisionRifle.AimFov = 22
+WeaponConfig.Weapons.PrecisionRifle.Scope = true
+WeaponConfig.Weapons.PrecisionRifle.AimSpeedMult = 0.55
+WeaponConfig.Weapons.EnergyBlades.NoAim = true
+WeaponConfig.Weapons.LightningGauntlet.NoAim = true
+
 -- Fixed shotgun pattern around `dir`: one centre pellet + a ring of (Pellets - 1) at PelletSpread degrees.
 function WeaponConfig.PelletDirs(dir: Vector3, w: any): { Vector3 }
 	local out = { dir }

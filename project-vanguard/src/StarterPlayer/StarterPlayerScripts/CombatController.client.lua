@@ -29,6 +29,13 @@ local lastShot = 0
 local bursting = false
 local localAmmo = 0
 local recoil = 0
+-- aiming down sights (hold right-click / mobile AIM button)
+local aimHeld = false
+local aimBlend = 0 -- 0 = hip, 1 = fully aimed
+local aimSent = false
+local fovTouched = false
+local SetAim = Remotes:WaitForChild("SetAim", 10)
+local HIP_FOV = 80
 local viewmodel: Model? = nil
 local viewmodelWeapon: string? = nil
 -- Phase 7 viewmodel animation state
@@ -313,6 +320,12 @@ RunService.RenderStepped:Connect(function(dt)
 		offset = offset
 			* CFrame.new(sway, -0.7 * (1 - equip) - 0.3 * reloadBlend, 0.1 * reloadBlend - 0.25 * castKick)
 			* CFrame.Angles(math.rad(-55) * (1 - equip) + math.rad(-30) * reloadBlend + math.rad(12) * castKick, 0, math.rad(28) * reloadBlend)
+		-- aiming: slide the gun to the centre of the screen (and hide it behind the sniper scope)
+		if aimBlend > 0 and w.Type ~= "Melee" then
+			local centre = CFrame.new(0, -0.42, -1.25 + recoil * 0.12) * CFrame.Angles(recoil * 0.06, 0, 0)
+			offset = offset:Lerp(centre, aimBlend)
+			if w.Scope and aimBlend > 0.85 then offset *= CFrame.new(0, -3, 0) end
+		end
 		local vm: Model = viewmodel :: Model
 		vm:PivotTo(cam.CFrame * offset)
 	elseif viewmodel then
@@ -352,7 +365,7 @@ local function fireOnce(): boolean
 	end
 	local cam = workspace.CurrentCamera
 	local origin = cam.CFrame.Position
-	local dir = spreadDirection(cam.CFrame.LookVector, w.Spread or 0)
+	local dir = spreadDirection(cam.CFrame.LookVector, (w.Spread or 0) * (1 - aimBlend * (1 - WeaponConfig.Aim.SpreadMult)))
 	local muzzle = muzzlePosition()
 	local tcol = tracerColorFor(player.UserId, w)
 
@@ -425,6 +438,57 @@ end)
 
 UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Controls.Fire then mouseDown = false end
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then aimHeld = false end
+end)
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then aimHeld = true end
+end)
+
+-- sniper scope overlay: black frame with a round lens and a thin crosshair
+local scopeGui = Instance.new("ScreenGui")
+scopeGui.Name = "ScopeUI"; scopeGui.IgnoreGuiInset = true; scopeGui.ResetOnSpawn = false; scopeGui.DisplayOrder = 3; scopeGui.Enabled = false
+scopeGui.Parent = player:WaitForChild("PlayerGui")
+local lens = Instance.new("Frame")
+lens.Name = "Lens"; lens.AnchorPoint = Vector2.new(0.5, 0.5); lens.Position = UDim2.fromScale(0.5, 0.5)
+lens.Size = UDim2.fromScale(0.8, 0.8); lens.BackgroundTransparency = 1; lens.Parent = scopeGui
+local lensAspect = Instance.new("UIAspectRatioConstraint"); lensAspect.Parent = lens
+local ring = Instance.new("UIStroke"); ring.Thickness = 3000; ring.Color = Color3.new(0, 0, 0); ring.Parent = lens -- huge stroke = black outside the lens
+local lensCorner = Instance.new("UICorner"); lensCorner.CornerRadius = UDim.new(0.5, 0); lensCorner.Parent = lens
+local glassRim = Instance.new("Frame"); glassRim.Size = UDim2.fromScale(1, 1); glassRim.BackgroundTransparency = 1; glassRim.Parent = lens
+local rimStroke = Instance.new("UIStroke"); rimStroke.Thickness = 3; rimStroke.Color = Color3.fromRGB(160, 90, 255); rimStroke.Parent = glassRim
+local rimCorner = Instance.new("UICorner"); rimCorner.CornerRadius = UDim.new(0.5, 0); rimCorner.Parent = glassRim
+for _, sz in ipairs({ { UDim2.new(1, 0, 0, 1), UDim2.fromScale(0, 0.5) }, { UDim2.new(0, 1, 1, 0), UDim2.fromScale(0.5, 0) } }) do
+	local line = Instance.new("Frame"); line.BorderSizePixel = 0; line.BackgroundColor3 = Color3.new(0, 0, 0); line.BackgroundTransparency = 0.2
+	line.Size = sz[1]; line.Position = sz[2]; line.Parent = lens
+end
+local dot = Instance.new("Frame"); dot.AnchorPoint = Vector2.new(0.5, 0.5); dot.Position = UDim2.fromScale(0.5, 0.5); dot.Size = UDim2.fromOffset(5, 5)
+dot.BackgroundColor3 = Color3.fromRGB(255, 60, 90); dot.BorderSizePixel = 0; dot.Parent = lens
+local dotCorner = Instance.new("UICorner"); dotCorner.CornerRadius = UDim.new(1, 0); dotCorner.Parent = dot
+
+-- aim blend, zoom, server speed penalty
+RunService.RenderStepped:Connect(function(dt)
+	local w = getWeapon()
+	local hum = getHumanoid()
+	local canAim = w ~= nil and not w.NoAim and w.Type ~= "Melee" and hum ~= nil and hum.Health > 0
+		and player.CameraMode == Enum.CameraMode.LockFirstPerson and player:GetAttribute("Reloading") ~= true
+	local want = aimHeld and canAim
+	aimBlend += ((want and 1 or 0) - aimBlend) * math.min(dt * 14, 1)
+	if aimBlend < 0.01 then aimBlend = 0 end
+	if want ~= aimSent and SetAim then
+		aimSent = want
+		SetAim:FireServer(want)
+	end
+	local cam = workspace.CurrentCamera
+	if aimBlend > 0 and w then
+		local target = w.AimFov or WeaponConfig.Aim.Fov
+		cam.FieldOfView = HIP_FOV + (target - HIP_FOV) * aimBlend
+		fovTouched = true
+	elseif fovTouched then
+		fovTouched = false
+		if player.CameraMode == Enum.CameraMode.LockFirstPerson then cam.FieldOfView = HIP_FOV end
+	end
+	scopeGui.Enabled = w ~= nil and w.Scope == true and aimBlend > 0.85
 end)
 
 -- Phase 9: touch buttons (MobileControls) feed the same trigger + reload logic
@@ -434,6 +498,7 @@ InputBridge.FireChanged:Connect(function(down: boolean)
 	if down then tryTrigger() end
 end)
 InputBridge.Reload:Connect(function() requestReload() end)
+InputBridge.AimChanged:Connect(function(on: boolean) aimHeld = on end)
 
 RunService.Heartbeat:Connect(function()
 	if not mouseDown then return end
