@@ -56,6 +56,21 @@ function Sfx.Play(name: string, opts: { Position: Vector3?, Volume: number?, Pit
 		d.Level = def.Distortion
 		d.Parent = s
 	end
+	-- Soft = roll off the highs (EQ) so a sound becomes a muffled "whum"; Chorus = wide, shimmering energy
+	if def.Soft then
+		local eq = Instance.new("EqualizerSoundEffect")
+		eq.HighGain = -def.Soft
+		eq.MidGain = -def.Soft * 0.4
+		eq.LowGain = 4
+		eq.Parent = s
+	end
+	if def.Chorus then
+		local ch = Instance.new("ChorusSoundEffect")
+		ch.Mix = def.Chorus
+		ch.Depth = 0.25
+		ch.Rate = 3
+		ch.Parent = s
+	end
 	local container: Instance = SoundService
 	local anchor: BasePart? = nil
 	if o.Position then

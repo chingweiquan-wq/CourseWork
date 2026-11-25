@@ -209,11 +209,45 @@ slots.Dash = makeSlot("Dash", 1, false)
 slots.Skill = makeSlot("Skill", 2, false)
 slots.Ultimate = makeSlot("Ultimate", 3, true)
 
+-- Download every hero's ability icons while in the lobby, so a slot is never blank at match start.
+task.spawn(function()
+	local probes = {}
+	for _, id in ipairs(HeroConfig.HeroOrder) do
+		for _, slot in ipairs(SLOTS) do
+			local img = IconConfig.Get(HeroConfig.Heroes[id].Abilities[slot].Icon)
+			if img ~= "" then
+				local l = Instance.new("ImageLabel")
+				l.Image = img
+				table.insert(probes, l)
+			end
+		end
+	end
+	pcall(function() game:GetService("ContentProvider"):PreloadAsync(probes) end)
+	for _, l in ipairs(probes) do l:Destroy() end
+end)
+
 local shownHero: string? = nil
+local iconSetAt = 0
 local function refreshIcons()
 	local h = hero()
-	if not h or shownHero == h.Id then return end
+	if not h then return end
+	if shownHero == h.Id then
+		-- an icon that still hasn't arrived after 4s gets requested again (slow or dropped image download)
+		if os.clock() - iconSetAt > 4 then
+			iconSetAt = os.clock()
+			for _, slot in ipairs(SLOTS) do
+				local s = slots[slot]
+				if s.Icon.Image ~= "" and not s.Icon.IsLoaded then
+					local img = s.Icon.Image
+					s.Icon.Image = ""
+					s.Icon.Image = img
+				end
+			end
+		end
+		return
+	end
 	shownHero = h.Id
+	iconSetAt = os.clock()
 	for _, slot in ipairs(SLOTS) do
 		local cfg = h.Abilities[slot]
 		local s = slots[slot]
@@ -380,8 +414,7 @@ AbilityFx.OnClientEvent:Connect(function(data)
 		local h = HeroConfig.Heroes[data.Hero]
 		local col = h and h.Color or C.Gold
 		if data.Owner == player.UserId then
-			showBanner(string.upper(data.Name) .. "!", col, true)
-			fovPunch(8)
+			fovPunch(8) -- the big callout, screen glow and aura are drawn by UltFxController
 		else
 			showBanner(string.format("%s: %s", data.Player or "?", string.upper(data.Name)), col, false)
 		end

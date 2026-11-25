@@ -37,7 +37,7 @@ AudioConfig.Sfx = {
 	Fire_BurstRifle = { Id = S .. "paintball.wav", Volume = 0.42, Pitch = 1.55, Jitter = 0.06, Max = 6, Distortion = 0.25 },
 	Fire_PrecisionRifle = { Id = S .. "Shoulder fired rocket.wav", Volume = 0.55, Pitch = 1.6, Jitter = 0.03, Max = 3, Distortion = 0.35 },
 	Fire_HeavyCannon = { Id = S .. "Launching rocket.wav", Volume = 0.5, Pitch = 1.25, Jitter = 0.05, Max = 3 },
-	Fire_MedicalProjector = { Id = S .. "electronicpingshort.wav", Volume = 0.3, Pitch = 1.35, Jitter = 0.08, Max = 5 },
+	Fire_MedicalProjector = { Id = S .. "electronicpingshort.wav", Volume = 0.45, Pitch = 0.5, Jitter = 0.04, Max = 4, Soft = 22, Chorus = 0.6 }, -- Solace: soft energy hum
 	Fire_EnergyBlades = { Id = S .. "swordslash.wav", Volume = 0.45, Pitch = 1.2, Jitter = 0.1, Max = 4 },
 	Fire_LightningGauntlet = { Id = S .. "flashbulb.wav", Volume = 0.45, Pitch = 0.75, Jitter = 0.08, Max = 5, Distortion = 0.4 },
 	Fire_Scattergun = { Id = S .. "Shoulder fired rocket.wav", Volume = 0.55, Pitch = 1.15, Jitter = 0.05, Max = 3, Distortion = 0.55 },

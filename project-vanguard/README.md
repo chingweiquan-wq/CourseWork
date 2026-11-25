@@ -93,3 +93,11 @@ stored in ReplicatedStorage.HeroAssets like the first six. All unlock for 2000 t
 - Turrets: server objects that shoot the nearest visible enemy; walls block them; one of each type per Forge.
 - Character Select is now a 3x3 grid; lobby showcase has 9 statues.
 - Ability icons are drawn in assets/icons; until they are uploaded, IconConfig borrows the closest existing icons.
+
+### Phase 9.3 - Ultimate effects, Solace sound, owner unlock, icon reliability
+- UltFxController (new): every ultimate gets a burst (neon ring, light pillar, flash, sparks) and an aura while active
+  (rising motes, orbiting orbs, outline glow) for everyone; the caster also gets a hero-coloured screen-edge glow and
+  an "ULTIMATE / <NAME>" callout. Visual only.
+- Solace's Medical Projector now plays a soft energy hum (pitched-down ping + EQ roll-off + chorus via new Sfx options Soft/Chorus).
+- The game owner's account (game.CreatorId) has every hero unlocked, in Studio and live.
+- HUD ability icons are preloaded in the lobby and re-requested if an image is slow to arrive.

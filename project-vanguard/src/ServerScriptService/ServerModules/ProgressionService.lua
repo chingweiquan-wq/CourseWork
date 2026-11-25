@@ -296,6 +296,18 @@ end
 ---------------------------------------------------------------- init
 function ProgressionService.Init()
 	RankedService.OnLoaded(function(player, data)
+		-- the game's owner gets every hero (for testing); applies in Studio and in the live game,
+		-- and only to the account that owns the experience
+		if game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId then
+			local granted = false
+			for _, id in ipairs(HeroConfig.HeroOrder) do
+				if not data.Progress.Unlocked[id] then
+					data.Progress.Unlocked[id] = true
+					granted = true
+				end
+			end
+			if granted then RankedService.MarkDirty(player) end
+		end
 		publish(player)
 		-- restore the saved hero selection (only outside matches)
 		if not MatchManager.IsInMatch(player) and data.Progress.Unlocked[data.Progress.Selected] then
