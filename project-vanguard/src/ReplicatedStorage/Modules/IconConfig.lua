@@ -34,17 +34,16 @@ IconConfig.Ids = {
 	Volt_Dash = "138912186086636",
 	Volt_Skill = "140166817563143",
 	Volt_Ult = "103708582166332",
-	-- Jeric / Forge / Echo: their own icons are drawn (project-vanguard/assets/icons) but not uploaded yet;
-	-- until then they borrow the closest existing icon. Replace these ids after uploading.
-	Jeric_Dash = "126004906821064",
-	Jeric_Skill = "133544830726676",
-	Jeric_Ult = "127024007702651",
-	Forge_Dash = "138912186086636",
-	Forge_Skill = "91199664476401",
-	Forge_Ult = "125717275567757",
-	Echo_Dash = "92618253730414",
-	Echo_Skill = "85208245870970",
-	Echo_Ult = "103708582166332",
+	-- Jeric / Forge / Echo: icons drawn in project-vanguard/assets/icons, uploaded via Asset Manager.
+	Jeric_Dash = "90536709333098",
+	Jeric_Skill = "107430487313859",
+	Jeric_Ult = "118649915111456",
+	Forge_Dash = "139701073228207",
+	Forge_Skill = "125899191702325",
+	Forge_Ult = "117596822946883",
+	Echo_Dash = "118226629337264",
+	Echo_Skill = "118444937783307",
+	Echo_Ult = "88501062483351",
 }
 
 -- Game modes -> icon names
