@@ -6,28 +6,28 @@
 local ProductConfig = {}
 
 ProductConfig.HeroProducts = {
-	Vex = 0,
-	Titan = 0,
-	Shade = 0,
-	Volt = 0,
-	Jeric = 0,
-	Forge = 0,
-	Echo = 0,
+	Vex = 3736044012,
+	Titan = 3736044068,
+	Shade = 3736044075,
+	Volt = 3736044079,
+	Jeric = 3736044083,
+	Forge = 3736044089,
+	Echo = 3736044106,
 }
 
 ProductConfig.SkinProducts = {
-	BurstRifle_Arctic = 0,
-	PrecisionRifle_Arctic = 0,
-	HeavyCannon_Arctic = 0,
-	MedicalProjector_Arctic = 0,
-	EnergyBlades_Arctic = 0,
-	LightningGauntlet_Arctic = 0,
-	BurstRifle_Gold = 0,
-	HeavyCannon_Gold = 0,
-	LightningGauntlet_Gold = 0,
-	PrecisionRifle_Void = 0,
-	MedicalProjector_Void = 0,
-	EnergyBlades_Void = 0,
+	BurstRifle_Arctic = 3736044119,
+	PrecisionRifle_Arctic = 3736044126,
+	HeavyCannon_Arctic = 3736044133,
+	MedicalProjector_Arctic = 3736044142,
+	EnergyBlades_Arctic = 3736044149,
+	LightningGauntlet_Arctic = 3736044158,
+	BurstRifle_Gold = 3736044165,
+	HeavyCannon_Gold = 3736044172,
+	LightningGauntlet_Gold = 3736044181,
+	PrecisionRifle_Void = 3736044186,
+	MedicalProjector_Void = 3736044188,
+	EnergyBlades_Void = 3736044193,
 }
 
 return ProductConfig
