@@ -30,4 +30,13 @@ ProductConfig.SkinProducts = {
 	EnergyBlades_Void = 3736044193,
 }
 
+-- Token packs (Robux -> tokens). The Starter pack can be bought once per account (enforced on the server).
+ProductConfig.TokenPacks = {
+	{ Id = "Starter", Tokens = 500, Robux = 1, ProductId = 3736046453, OneTime = true },
+	{ Id = "Pack500", Tokens = 500, Robux = 49, ProductId = 3736046458 },
+	{ Id = "Pack1200", Tokens = 1200, Robux = 99, ProductId = 3736046462 },
+	{ Id = "Pack2600", Tokens = 2600, Robux = 199, ProductId = 3736046464 },
+	{ Id = "Pack7000", Tokens = 7000, Robux = 499, ProductId = 3736046469, BestValue = true },
+}
+
 return ProductConfig

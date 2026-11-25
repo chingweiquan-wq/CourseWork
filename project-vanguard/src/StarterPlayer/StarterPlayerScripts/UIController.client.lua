@@ -236,6 +236,8 @@ for i, modeId in ipairs(GameConfig.ModeOrder) do
 	end)
 end
 
+local openTokenShop: () -> () = function() end -- set by the TOKEN SHOP section below
+
 ---------------------------------------------------------------- CHARACTERS
 local charGui = UI.ScreenGui("CharacterUI", playerGui, 10)
 local charDim, charBody = makeModal(charGui, "CHARACTERS", C.Magenta)
@@ -471,6 +473,7 @@ local function purchaseHero(id: string)
 	local tokens = profile.Tokens
 	if tokens < h.Price then
 		toast(string.format("You need %d more tokens for %s", h.Price - tokens, h.DisplayName), C.Gold)
+		openTokenShop()
 		return
 	end
 	if not confirmAt[id] or os.clock() - confirmAt[id] > 3 then
@@ -499,7 +502,9 @@ local shopDim, shopBody = makeModal(shopGui, "ISAAC'S ARMORY", C.Gold)
 local tabs = { "HEROES", "WEAPON SKINS", "TOKENS" }
 local shopContent = UI.Panel({ Parent = shopBody, Name = "Content", Size = UDim2.fromScale(1, 0.82), Position = UDim2.fromScale(0, 0.18), Color = C.Panel, Stroke = C.Gold })
 local shopText = UI.Label({ Parent = shopContent, Text = "", Font = UI.Fonts.Bold, Size = UDim2.fromScale(0.92, 0.86), Position = UDim2.fromScale(0.04, 0.07), AlignX = Enum.TextXAlignment.Left, AlignY = Enum.TextYAlignment.Top, MaxSize = 22, Rich = true })
+local tokensTabBuy: GuiObject? = nil
 local function showTab(name: string)
+	if tokensTabBuy then tokensTabBuy.Visible = name == "TOKENS" end
 	if name == "HEROES" then
 		local lines = {}
 		for _, id in ipairs(HeroConfig.HeroOrder) do
@@ -517,6 +522,63 @@ for i, name in ipairs(tabs) do
 	local t = UI.Button({ Parent = shopBody, Name = name, Text = name, Size = UDim2.fromScale(0.3, 0.13), Position = UDim2.fromScale((i - 1) * 0.35, 0), Accent = C.Gold, MaxSize = 24 })
 	t.MouseButton1Click:Connect(function() showTab(name) end)
 end
+
+---------------------------------------------------------------- TOKEN SHOP (Robux -> tokens)
+local ShopProducts = require(Modules.ProductConfig)
+local BuyTokens = Remotes:WaitForChild("BuyTokens", 10)
+local tokenGui = UI.ScreenGui("TokenShopUI", playerGui, 12)
+local tokenDim, tokenBody = makeModal(tokenGui, "GET TOKENS", C.Gold)
+tokenDim.Name = "TokenShop"
+local tokenBalance = UI.Label({ Parent = tokenBody, Text = "", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(1, 0.07), Position = UDim2.fromScale(0, 0), MaxSize = 20, Rich = true })
+local packRow = Instance.new("Frame"); packRow.Name = "Packs"; packRow.BackgroundTransparency = 1
+packRow.Size = UDim2.fromScale(1, 0.9); packRow.Position = UDim2.fromScale(0, 0.1); packRow.Parent = tokenBody
+local packList = Instance.new("UIListLayout"); packList.FillDirection = Enum.FillDirection.Horizontal
+packList.HorizontalAlignment = Enum.HorizontalAlignment.Center; packList.Padding = UDim.new(0.015, 0); packList.SortOrder = Enum.SortOrder.LayoutOrder
+packList.Parent = packRow
+local starterCard: GuiObject? = nil
+local packCount = #ShopProducts.TokenPacks
+for i, pack in ipairs(ShopProducts.TokenPacks) do
+	local accent = pack.OneTime and C.Green or (pack.BestValue and C.Magenta or C.Gold)
+	local card = UI.Panel({ Parent = packRow, Name = pack.Id, Size = UDim2.fromScale(1 / packCount - 0.015, 1), Color = C.Panel, Stroke = accent, StrokeThickness = pack.BestValue and 3 or 2 })
+	card.LayoutOrder = i
+	local grad = Instance.new("UIGradient"); grad.Color = ColorSequence.new(accent:Lerp(Color3.new(0, 0, 0), 0.6), C.Panel); grad.Rotation = 90; grad.Parent = card
+	-- tag on top: one-time offer / best value
+	if pack.OneTime or pack.BestValue then
+		local tag = UI.Panel({ Parent = card, Name = "Tag", Size = UDim2.fromScale(0.84, 0.09), Position = UDim2.fromScale(0.5, 0.03), AnchorPoint = Vector2.new(0.5, 0), Color = accent, Transparency = 0, Corner = 6 })
+		UI.Label({ Parent = tag, Text = pack.OneTime and "ONE-TIME OFFER" or "BEST VALUE", Font = UI.Fonts.Title, Color = Color3.fromRGB(20, 22, 30), Size = UDim2.fromScale(0.94, 0.8), Position = UDim2.fromScale(0.03, 0.1), MaxSize = 16, NoStroke = true })
+	end
+	-- coin stack: bigger packs show more coins
+	local coins = math.clamp(math.ceil(pack.Tokens / 1500), 1, 5)
+	for c = 1, coins do
+		UI.Icon({ Parent = card, Icon = "Token", Size = UDim2.fromScale(0.46, 0.26), Position = UDim2.fromScale(0.5 + (c - (coins + 1) / 2) * 0.13, 0.36 - (c % 2) * 0.03), AnchorPoint = Vector2.new(0.5, 0.5) })
+	end
+	UI.Label({ Parent = card, Text = string.format("%s", pack.Tokens >= 1000 and string.format("%d,%03d", pack.Tokens // 1000, pack.Tokens % 1000) or tostring(pack.Tokens)), Font = UI.Fonts.Title, Color = C.Gold, Size = UDim2.fromScale(0.9, 0.13), Position = UDim2.fromScale(0.05, 0.53), MaxSize = 40, StrokeSize = 2.5 })
+	UI.Label({ Parent = card, Text = pack.OneTime and "STARTER PACK" or "TOKENS", Font = UI.Fonts.Bold, Color = C.Subtext, Size = UDim2.fromScale(0.9, 0.07), Position = UDim2.fromScale(0.05, 0.665), MaxSize = 16 })
+	local buy = UI.Button({ Parent = card, Name = "Buy", Text = "R$ " .. pack.Robux, Size = UDim2.fromScale(0.84, 0.13), Position = UDim2.fromScale(0.5, 0.95), AnchorPoint = Vector2.new(0.5, 1), Accent = accent, MaxSize = 26 })
+	buy.MouseButton1Click:Connect(function()
+		if BuyTokens then BuyTokens:FireServer(pack.Id) end
+	end)
+	if pack.OneTime then starterCard = card end
+end
+local function refreshTokenShop()
+	tokenBalance.Text = string.format("Balance: <font color=\"#ffc83c\">%d TOKENS</font>   -   spend them on heroes", profile.Tokens)
+	if starterCard then starterCard.Visible = player:GetAttribute("StarterPackBought") ~= true end
+end
+player:GetAttributeChangedSignal("StarterPackBought"):Connect(refreshTokenShop)
+player:GetAttributeChangedSignal("Tokens"):Connect(function()
+	local t = player:GetAttribute("Tokens")
+	if typeof(t) == "number" then profile.Tokens = t end
+	refreshTokenShop()
+end)
+openTokenShop = function()
+	refreshTokenShop()
+	showModal(tokenDim)
+end
+-- shop TOKENS tab: a button straight into the token packs
+local getTokensBtn = UI.Button({ Parent = shopContent, Name = "GetTokens", Text = "GET TOKENS", Size = UDim2.fromScale(0.32, 0.16), Position = UDim2.fromScale(0.5, 0.92), AnchorPoint = Vector2.new(0.5, 1), Accent = C.Gold, MaxSize = 26 })
+getTokensBtn.Visible = false
+getTokensBtn.MouseButton1Click:Connect(function() openTokenShop() end)
+tokensTabBuy = getTokensBtn
 
 ---------------------------------------------------------------- MATCH HUD + RESULT
 local matchGui = UI.ScreenGui("MatchUI", playerGui, 4)
@@ -960,7 +1022,7 @@ privacyBtn.MouseButton1Click:Connect(function()
 end)
 
 settingsBtn.MouseButton1Click:Connect(function() showModal(settingsDim) end)
-plusBtn.MouseButton1Click:Connect(function() toast("Token packs arrive with Robux purchases (Phase 6)", C.Gold) end)
+plusBtn.MouseButton1Click:Connect(function() openTokenShop() end)
 -- Isaac's shop window uses the Clean Shop GUI kit (UI by @roary16), filled with hero offers.
 local kitShop = playerGui:WaitForChild("IsaacShopUI", 10)
 local kitFrame = kitShop and kitShop:FindFirstChild("ShopFrame")

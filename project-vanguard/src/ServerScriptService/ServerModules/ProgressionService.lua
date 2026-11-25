@@ -53,6 +53,7 @@ local function publish(player: Player)
 	local pr = data.Progress
 	player:SetAttribute("Tokens", pr.Tokens)
 	player:SetAttribute("UnlockedHeroes", table.concat(unlockedList(pr), ","))
+	player:SetAttribute("StarterPackBought", pr.StarterPackBought == true)
 end
 
 local function rateLimited(player: Player): boolean
@@ -364,6 +365,40 @@ function ProgressionService.Init()
 			end
 			data.Progress.Unlocked[heroId] = true
 			Notify:FireClient(player, HeroConfig.Heroes[heroId].DisplayName .. " unlocked! Thanks for your support.")
+			return true
+		end)
+	end
+	-- token packs: the client asks for a pack id; the server checks it (and the one-time rule) and prompts
+	local BuyTokens = Remotes:FindFirstChild("BuyTokens") :: RemoteEvent?
+	if not BuyTokens then
+		local r = Instance.new("RemoteEvent")
+		r.Name = "BuyTokens"
+		r.Parent = Remotes
+		BuyTokens = r
+	end
+	local packById = {}
+	for _, pack in ipairs(ProductConfig.TokenPacks) do packById[pack.Id] = pack end
+	;(BuyTokens :: RemoteEvent).OnServerEvent:Connect(function(player: Player, packId: any)
+		if rateLimited(player) then return end
+		local pack = typeof(packId) == "string" and packById[packId] or nil
+		if not pack or not pack.ProductId or pack.ProductId <= 0 then return end
+		local data = RankedService.GetData(player)
+		if not data then
+			Notify:FireClient(player, "Your profile is still loading - try again in a moment")
+			return
+		end
+		if pack.OneTime and data.Progress.StarterPackBought then
+			Notify:FireClient(player, "You've already claimed the Starter Pack")
+			return
+		end
+		MarketplaceService:PromptProductPurchase(player, pack.ProductId)
+	end)
+	for _, pack in ipairs(ProductConfig.TokenPacks) do
+		ProgressionService.RegisterProduct(pack.ProductId, function(player, _receipt, data)
+			-- always grant what was paid for (a duplicate one-time buy that slipped through still gets its tokens)
+			data.Progress.Tokens += pack.Tokens
+			if pack.OneTime then data.Progress.StarterPackBought = true end
+			Notify:FireClient(player, string.format("+%d tokens! Thanks for your support.", pack.Tokens))
 			return true
 		end)
 	end
