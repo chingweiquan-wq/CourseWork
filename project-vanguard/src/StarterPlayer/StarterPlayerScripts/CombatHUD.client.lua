@@ -211,7 +211,8 @@ RunService.RenderStepped:Connect(function()
 	-- crosshair + death screen
 	cross.Visible = alive and player:GetAttribute("CombatEnabled") ~= nil
 	local respawnAt = player:GetAttribute("RespawnAt")
-	if not alive and typeof(respawnAt) == "number" then
+	local deathCam = player.PlayerGui:FindFirstChild("DeathCamUI") :: ScreenGui?
+	if not alive and typeof(respawnAt) == "number" and not (deathCam and deathCam.Enabled) then -- the death cam has its own panel
 		deathPanel.Visible = true
 		deathTitle.Text = lastKiller ~= "" and ("ELIMINATED BY " .. string.upper(lastKiller)) or "ELIMINATED"
 		deathSub.Text = string.format("Respawning in %d", math.max(0, math.ceil(respawnAt - workspace:GetServerTimeNow())))

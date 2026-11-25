@@ -19,6 +19,14 @@ local FireRemote = Remotes.Fire :: RemoteEvent
 local ReloadRemote = Remotes.Reload :: RemoteEvent
 local CombatFx = Remotes.CombatFx :: RemoteEvent
 local HitConfirm = Remotes.HitConfirm :: RemoteEvent
+-- death cam: the victim is told who killed them and who dealt how much (created here if missing)
+local DeathCam = Remotes:FindFirstChild("DeathCam") :: RemoteEvent?
+if not DeathCam then
+	local r = Instance.new("RemoteEvent")
+	r.Name = "DeathCam"
+	r.Parent = Remotes
+	DeathCam = r
+end
 
 local CombatConfig = GameConfig.Combat
 
@@ -190,10 +198,12 @@ function CombatService.ApplyDamage(attacker: Player, target: Combatant, amount: 
 		log = {}
 		damageLog[target.Model] = log
 	end
-	log[attacker] = { Time = os.clock(), Weapon = weaponName, Headshot = headshot }
+	-- log BEFORE changing health: Died fires the instant health reaches 0 and reads this log
 	local before = hum.Health
+	local dealt = math.min(amount, before)
+	local prev = log[attacker]
+	log[attacker] = { Time = os.clock(), Weapon = weaponName, Headshot = headshot, Damage = (prev and prev.Damage or 0) + dealt }
 	hum.Health = math.max(0, before - amount)
-	local dealt = before - hum.Health
 	HitConfirm:FireClient(attacker, { Damage = math.floor(dealt + 0.5), Headshot = headshot, Killed = hum.Health <= 0 })
 	for _, fn in ipairs(damageListeners) do task.spawn(fn, attacker, target, dealt) end
 end
@@ -232,6 +242,36 @@ function CombatService.WatchDeath(model: Model, humanoid: Humanoid)
 		local victimBot = MatchManager.GetBotByModel(match, model)
 		local victimName = if victimPlayer then victimPlayer.DisplayName elseif victimBot then victimBot.Name else (model:GetAttribute("DisplayName") or model.Name)
 		MatchManager.RecordElimination(match, killer, victimPlayer, victimName :: string, assisters, entry and entry.Weapon or nil, entry and entry.Headshot or false, killerBot, victimBot)
+
+		-- death cam info for a player victim: killer (player or bot), weapon, killer HP, damage breakdown
+		if victimPlayer and DeathCam then
+			local function describe(a: any): (string, string?, Model?)
+				if typeof(a) == "Instance" then return a.DisplayName, a:GetAttribute("Hero") :: string?, a.Character end
+				return a.Name, a.HeroId, a.Model
+			end
+			local breakdown = {}
+			for attacker, e in pairs(log) do
+				local valid = if typeof(attacker) == "Instance" then attacker.Parent == Players else attacker.MatchId == match.Id
+				if valid and (e.Damage or 0) > 0 then
+					local name, hero = describe(attacker)
+					table.insert(breakdown, { Name = name, Hero = hero, Damage = math.floor(e.Damage + 0.5), Killer = attacker == killerAny })
+				end
+			end
+			table.sort(breakdown, function(a, b) return a.Damage > b.Damage end)
+			local info: { [string]: any } = { Breakdown = breakdown, Respawn = MatchManager.GetRespawnTime(victimPlayer) }
+			if killerAny then
+				local name, hero, kModel = describe(killerAny)
+				local kHum = kModel and kModel:FindFirstChildOfClass("Humanoid")
+				info.KillerName = name
+				info.KillerHero = hero
+				info.KillerModel = kModel
+				info.Weapon = entry and entry.Weapon or nil
+				info.Headshot = entry and entry.Headshot or false
+				info.KillerHP = kHum and math.ceil(kHum.Health) or nil
+				info.KillerMaxHP = kHum and kHum.MaxHealth or nil
+			end
+			DeathCam:FireClient(victimPlayer, info)
+		end
 	end)
 end
 
@@ -571,7 +611,8 @@ function CombatService.ApplyBotDamage(bot: any, target: Combatant, amount: numbe
 		log = {}
 		damageLog[target.Model] = log
 	end
-	log[bot] = { Time = os.clock(), Weapon = weaponName, Headshot = headshot }
+	local prev = log[bot]
+	log[bot] = { Time = os.clock(), Weapon = weaponName, Headshot = headshot, Damage = (prev and prev.Damage or 0) + math.min(amount, hum.Health) }
 	hum.Health = math.max(0, hum.Health - amount)
 end
 
