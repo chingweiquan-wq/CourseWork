@@ -80,9 +80,9 @@ AudioConfig.RollOff = { Min = 12, Max = 220 }
 
 -- Announcer (text-to-speech). VoiceId 1-10; lower pitch = deeper voice.
 AudioConfig.Announcer = {
-	VoiceId = "2",
-	Pitch = -0.25,
-	Speed = 1.0,
+	VoiceId = "3", -- US male (deep, pitched down) - see docs: audio/objects "List of artificial voices"
+	Pitch = -0.45,
+	Speed = 1.05,
 	Volume = 1.6,
 	Reverb = true,
 }
