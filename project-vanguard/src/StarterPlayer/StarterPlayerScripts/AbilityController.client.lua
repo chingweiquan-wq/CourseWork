@@ -78,6 +78,56 @@ local function ring(pos: Vector3, radius: number, color: Color3, t: number)
 	Debris:AddItem(r, t + 0.05)
 end
 
+-- Visual upgrade helpers ------------------------------------------------------
+local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
+-- one-off particle burst + light flash at a point
+local function sparks(pos: Vector3, color: Color3, count: number, speed: number, lightRange: number?)
+	local holder = fxPart(Enum.PartType.Block, Vector3.one * 0.1, CFrame.new(pos), color)
+	holder.Transparency = 1
+	local pe = Instance.new("ParticleEmitter")
+	pe.Texture = SPARK
+	pe.Color = ColorSequence.new(Color3.new(1, 1, 1), color)
+	pe.LightEmission = 1
+	pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.55), NumberSequenceKeypoint.new(1, 0) })
+	pe.Lifetime = NumberRange.new(0.35, 0.7)
+	pe.Speed = NumberRange.new(speed * 0.5, speed)
+	pe.SpreadAngle = Vector2.new(180, 180)
+	pe.Drag = 5
+	pe.Rate = 0
+	pe.Parent = holder
+	pe:Emit(count)
+	if lightRange then
+		local l = Instance.new("PointLight"); l.Color = color; l.Range = lightRange; l.Brightness = 5; l.Parent = holder
+		TweenService:Create(l, TweenInfo.new(0.5), { Brightness = 0 }):Play()
+	end
+	Debris:AddItem(holder, 1)
+end
+
+-- glowing column that shoots up and fades
+local function pillar(pos: Vector3, color: Color3, height: number, width: number)
+	local p = fxPart(Enum.PartType.Cylinder, Vector3.new(1, width, width), CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90)), color)
+	p.Transparency = 0.35
+	TweenService:Create(p, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(height, width * 0.3, width * 0.3), CFrame = CFrame.new(pos + Vector3.new(0, height / 2, 0)) * CFrame.Angles(0, 0, math.rad(90)), Transparency = 1,
+	}):Play()
+	Debris:AddItem(p, 0.45)
+end
+
+-- low-poly debris chunks flung outward
+local function chunks(pos: Vector3, color: Color3, count: number, dist: number)
+	for _ = 1, count do
+		local a = math.random() * math.pi * 2
+		local d = Vector3.new(math.cos(a), 0.6 + math.random() * 0.8, math.sin(a)).Unit
+		local s = 0.3 + math.random() * 0.4
+		local c = fxPart(Enum.PartType.Block, Vector3.one * s, CFrame.new(pos) * CFrame.Angles(math.random() * 3, math.random() * 3, 0), color)
+		local t = 0.35 + math.random() * 0.2
+		TweenService:Create(c, TweenInfo.new(t, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			CFrame = CFrame.new(pos + d * dist * (0.6 + math.random() * 0.6)) * CFrame.Angles(math.random() * 6, math.random() * 6, 0), Size = Vector3.one * 0.05, Transparency = 1,
+		}):Play()
+		Debris:AddItem(c, t + 0.05)
+	end
+end
+
 local function fovPunch(amount: number)
 	local cam = workspace.CurrentCamera
 	local base = cam.FieldOfView
@@ -130,7 +180,24 @@ local function doDash(cfg: any): boolean
 	fovPunch(10)
 	Sfx.Play("Dash")
 	local h = hero()
-	afterimages(root, h and h.Color or C.Cyan, 3, m.Time / 3)
+	local col = h and h.Color or C.Cyan
+	afterimages(root, col, 5, m.Time / 5)
+	-- neon ribbon trail behind the hero for the length of the dash
+	local a0 = Instance.new("Attachment"); a0.Position = Vector3.new(0, 1.6, 0); a0.Parent = root
+	local a1 = Instance.new("Attachment"); a1.Position = Vector3.new(0, -1.8, 0); a1.Parent = root
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = a0; trail.Attachment1 = a1
+	trail.Color = ColorSequence.new(col:Lerp(Color3.new(1, 1, 1), 0.4), col)
+	trail.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) })
+	trail.LightEmission = 1
+	trail.Lifetime = 0.3
+	trail.FaceCamera = true
+	trail.Parent = root
+	task.delay(m.Time, function() trail.Enabled = false end)
+	Debris:AddItem(trail, m.Time + 0.4); Debris:AddItem(a0, m.Time + 0.4); Debris:AddItem(a1, m.Time + 0.4)
+	-- launch burst at the start point
+	ring(root.Position - Vector3.new(0, 2.8, 0), 4, col, 0.3)
+	sparks(root.Position - Vector3.new(0, 2, 0), col, 18, 16, 10)
 	return true
 end
 
@@ -363,11 +430,18 @@ AbilityFx.OnClientEvent:Connect(function(data)
 	if typeof(data) ~= "table" then return end
 	local color = typeof(data.Color) == "Color3" and data.Color or C.Cyan
 	if data.Type == "Explosion" then
+		burst(data.Position, data.Radius * 0.5, Color3.new(1, 1, 1), 0.15)
 		burst(data.Position, data.Radius, color, 0.35)
 		ring(data.Position, data.Radius * 1.2, color, 0.45)
+		ring(data.Position, data.Radius * 0.7, color:Lerp(Color3.new(1, 1, 1), 0.5), 0.3)
+		sparks(data.Position, color, 40, 30, data.Radius * 3)
+		chunks(data.Position, color, 10, data.Radius * 1.3)
 	elseif data.Type == "Shockwave" then
 		ring(data.Position, data.Radius, color, 0.5)
+		ring(data.Position, data.Radius * 0.6, color:Lerp(Color3.new(1, 1, 1), 0.5), 0.35)
 		burst(data.Position, data.Radius * 0.6, color, 0.3, Enum.Material.ForceField)
+		sparks(data.Position + Vector3.new(0, 0.5, 0), color, 30, 26, data.Radius * 2.5)
+		chunks(data.Position, color, 8, data.Radius)
 		local cam = workspace.CurrentCamera
 		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 		if root and (root.Position - data.Position).Magnitude < data.Radius * 2 then
@@ -378,20 +452,35 @@ AbilityFx.OnClientEvent:Connect(function(data)
 		end
 	elseif data.Type == "HealRing" then
 		ring(data.Position - Vector3.new(0, 2.5, 0), data.Radius, color, 0.5)
+		pillar(data.Position - Vector3.new(0, 2.5, 0), color, 10, 3)
+		sparks(data.Position, color, 22, 8, 14)
 	elseif data.Type == "Ping" then
 		ring(data.Position, data.Radius, color, 0.6)
+		task.delay(0.15, function() ring(data.Position, data.Radius * 0.7, color, 0.5) end)
+		task.delay(0.3, function() ring(data.Position, data.Radius * 0.4, color, 0.4) end)
+		pillar(data.Position, color, 14, 2)
+		sparks(data.Position + Vector3.new(0, 1, 0), color, 16, 12, 18)
 	elseif data.Type == "Zap" then
 		for _ = 1, 3 do
 			local a = math.random() * math.pi * 2
 			local r = math.random() * data.Radius
 			local p = data.Position + Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)
-			local bolt = fxPart(Enum.PartType.Block, Vector3.new(0.25, 6, 0.25), CFrame.new(p + Vector3.new(0, 3, 0)) * CFrame.Angles(math.random() * 0.6, 0, math.random() * 0.6), color)
-			TweenService:Create(bolt, TweenInfo.new(0.2), { Transparency = 1 }):Play()
-			Debris:AddItem(bolt, 0.25)
+			-- jagged three-segment lightning bolt + spark at the strike point
+			local top = p + Vector3.new(0, 7, 0)
+			local pts = { top, top:Lerp(p, 0.35) + Vector3.new(math.random() - 0.5, 0, math.random() - 0.5) * 1.6, top:Lerp(p, 0.7) + Vector3.new(math.random() - 0.5, 0, math.random() - 0.5) * 1.6, p }
+			for k = 1, 3 do
+				local d = (pts[k + 1] - pts[k]).Magnitude
+				local bolt = fxPart(Enum.PartType.Block, Vector3.new(0.22, 0.22, d), CFrame.lookAt((pts[k] + pts[k + 1]) / 2, pts[k + 1]), color:Lerp(Color3.new(1, 1, 1), 0.3))
+				TweenService:Create(bolt, TweenInfo.new(0.2), { Transparency = 1 }):Play()
+				Debris:AddItem(bolt, 0.25)
+			end
+			sparks(p, color, 10, 14, 10)
 		end
 	elseif data.Type == "Blink" then
 		burst(data.From, 3, color, 0.3)
 		burst(data.To, 3, color, 0.3)
+		sparks(data.From, color, 18, 14, 10)
+		sparks(data.To, color, 24, 18, 14)
 		local dist = (data.To - data.From).Magnitude
 		if dist > 0.5 then
 			local streak = fxPart(Enum.PartType.Block, Vector3.new(0.4, 0.4, dist), CFrame.lookAt((data.From + data.To) / 2, data.To), color)
@@ -410,6 +499,7 @@ AbilityFx.OnClientEvent:Connect(function(data)
 		end
 	elseif data.Type == "Puff" then
 		burst(data.Position, 4, color, 0.4, Enum.Material.ForceField)
+		sparks(data.Position, color, 20, 12, 10)
 	elseif data.Type == "UltCast" then
 		local h = HeroConfig.Heroes[data.Hero]
 		local col = h and h.Color or C.Gold

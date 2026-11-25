@@ -74,9 +74,14 @@ end
 local function tracer(from: Vector3, to: Vector3, color: Color3, width: number)
 	local dist = (to - from).Magnitude
 	if dist < 0.5 then return end
-	local p = fxPart(Vector3.new(width, width, dist), CFrame.lookAt((from + to) / 2, to), color)
-	p.Transparency = 0.15
-	fade(p, 0.12)
+	local cf = CFrame.lookAt((from + to) / 2, to)
+	-- bright white-hot core + wider coloured glow around it
+	local core = fxPart(Vector3.new(width * 0.5, width * 0.5, dist), cf, color:Lerp(Color3.new(1, 1, 1), 0.6))
+	core.Transparency = 0.05
+	fade(core, 0.1)
+	local glow = fxPart(Vector3.new(width * 2.6, width * 2.6, dist), cf, color)
+	glow.Transparency = 0.7
+	fade(glow, 0.16)
 end
 
 -- Phase 7: neon low-poly shards. Thin glowing blocks fly out from a point and shrink away.
@@ -100,9 +105,18 @@ end
 local function flash(pos: Vector3, color: Color3, size: number, dir: Vector3?)
 	local p = fxPart(Vector3.one * size * 0.7, CFrame.new(pos) * CFrame.Angles(math.random() * 3, math.random() * 3, 0), color)
 	local light = Instance.new("PointLight")
-	light.Color = color; light.Range = 8; light.Brightness = 3; light.Parent = p
+	light.Color = color; light.Range = 12; light.Brightness = 5; light.Parent = p
 	fade(p, 0.07)
-	shards(pos, dir, color, 3, 1.3, size * 0.35, 0.45)
+	-- star-shaped muzzle flash: two crossed neon blades
+	if dir then
+		local base = CFrame.lookAt(pos, pos + dir)
+		for i = 0, 1 do
+			local blade = fxPart(Vector3.new(size * 0.12, size * 1.1, size * 0.12), base * CFrame.Angles(0, 0, math.rad(45 + i * 90)), color:Lerp(Color3.new(1, 1, 1), 0.4))
+			blade.Transparency = 0.1
+			fade(blade, 0.06)
+		end
+	end
+	shards(pos, dir, color, 4, 1.6, size * 0.35, 0.45)
 end
 
 local function impact(pos: Vector3, color: Color3, radius: number)

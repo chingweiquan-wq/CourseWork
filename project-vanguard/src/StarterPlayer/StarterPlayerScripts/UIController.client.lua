@@ -442,6 +442,21 @@ for i, id in ipairs(HeroConfig.HeroOrder) do
 	card.MouseButton1Click:Connect(function() showHero(id) end)
 end
 
+-- portraits turn slowly while the Heroes window is open; the hero being viewed turns faster
+local spinAngle: { [string]: number } = {}
+RunService.RenderStepped:Connect(function(dt)
+	if not charDim.Visible then return end
+	for id, refs in pairs(cardRefs) do
+		local vf = refs.Card:FindFirstChild("Portrait")
+		local m = vf and vf:FindFirstChildOfClass("Model")
+		if m then
+			local a = (spinAngle[id] or 0) + dt * (id == viewedHero and 1.6 or 0.6)
+			spinAngle[id] = a
+			m:PivotTo(CFrame.Angles(0, math.pi + a, 0))
+		end
+	end
+end)
+
 local function refreshCards()
 	for _, id in ipairs(HeroConfig.HeroOrder) do
 		local h = HeroConfig.Heroes[id]
