@@ -280,8 +280,42 @@ local function heroPortrait(parent: Instance, heroId: string, size: UDim2, pos: 
 	return vf
 end
 
-local grid = Instance.new("Frame"); grid.Name = "Grid"; grid.BackgroundTransparency = 1; grid.Size = UDim2.fromScale(0.55, 1); grid.Parent = charBody
-local gl = Instance.new("UIGridLayout"); gl.CellSize = UDim2.fromScale(0.315, 0.31); gl.CellPadding = UDim2.fromScale(0.025, 0.035); gl.SortOrder = Enum.SortOrder.LayoutOrder; gl.Parent = grid -- 3x3 for 9 heroes
+-- hero cards: 6 visible (3 across, 2 rows), the rest reached by scrolling down
+local GRID_COLS, GRID_ROWS, GRID_PAD, GRID_BAR = 3, 2, 10, 6
+local grid = Instance.new("ScrollingFrame")
+grid.Name = "Grid"
+grid.BackgroundTransparency = 1
+grid.BorderSizePixel = 0
+grid.Size = UDim2.fromScale(0.55, 1)
+grid.ScrollingDirection = Enum.ScrollingDirection.Y
+grid.ScrollBarThickness = GRID_BAR
+grid.ScrollBarImageColor3 = C.Magenta
+grid.ScrollBarImageTransparency = 0.1
+grid.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
+grid.ElasticBehavior = Enum.ElasticBehavior.WhenScrollable
+grid.CanvasSize = UDim2.new()
+grid.Parent = charBody
+local gl = Instance.new("UIGridLayout"); gl.SortOrder = Enum.SortOrder.LayoutOrder; gl.Parent = grid
+-- small inner margin so the selected card's glowing border isn't clipped by the scroll area
+local GRID_INSET = 4
+local gridPad = Instance.new("UIPadding")
+gridPad.PaddingLeft = UDim.new(0, GRID_INSET); gridPad.PaddingTop = UDim.new(0, GRID_INSET)
+gridPad.PaddingRight = UDim.new(0, GRID_INSET); gridPad.PaddingBottom = UDim.new(0, GRID_INSET)
+gridPad.Parent = grid
+-- size cards in pixels so exactly two rows fill the visible area (scale sizes inside a ScrollingFrame follow the canvas)
+local function layoutGrid()
+	local w = grid.AbsoluteSize.X - GRID_BAR - 4 - GRID_INSET * 2
+	local h = grid.AbsoluteSize.Y - GRID_INSET * 2
+	if w <= 0 or h <= 0 then return end
+	local cellW = math.floor((w - GRID_PAD * (GRID_COLS - 1)) / GRID_COLS)
+	local cellH = math.floor((h - GRID_PAD * (GRID_ROWS - 1)) / GRID_ROWS)
+	gl.CellSize = UDim2.fromOffset(cellW, cellH)
+	gl.CellPadding = UDim2.fromOffset(GRID_PAD, GRID_PAD)
+	local rows = math.ceil(#HeroConfig.HeroOrder / GRID_COLS)
+	grid.CanvasSize = UDim2.fromOffset(0, rows * cellH + (rows - 1) * GRID_PAD + GRID_INSET * 2)
+end
+grid:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutGrid)
+task.defer(layoutGrid)
 
 local detail = UI.Panel({ Parent = charBody, Name = "Detail", Size = UDim2.fromScale(0.43, 1), Position = UDim2.fromScale(0.57, 0), Color = C.Panel, Stroke = C.Magenta })
 local dName = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.1), Position = UDim2.fromScale(0.05, 0.03), AlignX = Enum.TextXAlignment.Left, MaxSize = 36, Rich = true })
@@ -289,16 +323,22 @@ local dMeta = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Bold, Color
 local dDesc = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Body, Size = UDim2.fromScale(0.9, 0.09), Position = UDim2.fromScale(0.05, 0.19), AlignX = Enum.TextXAlignment.Left, AlignY = Enum.TextYAlignment.Top, MaxSize = 16 })
 UI.Label({ Parent = detail, Text = "ABILITIES", Font = UI.Fonts.Title, Color = C.Magenta, Size = UDim2.fromScale(0.9, 0.05), Position = UDim2.fromScale(0.05, 0.29), AlignX = Enum.TextXAlignment.Left, MaxSize = 18 })
 
--- one row per ability: key badge + name (+ cooldown) + short text
-local abilityRows: { [string]: { Key: TextLabel, Name: TextLabel, Text: TextLabel } } = {}
+-- one row per ability: key badge + icon art + name + short text + cooldown pill
+local abilityRows: { [string]: { Key: TextLabel, Y: number, IconPanel: Frame, Icon: ImageLabel, IconStroke: UIStroke?, Name: TextLabel, Text: TextLabel, CdPanel: Frame, Cd: TextLabel } } = {}
 for i, slot in ipairs({ "Primary", "Dash", "Skill", "Ultimate" }) do
 	local y = 0.34 + (i - 1) * 0.115
-	local badge = UI.Panel({ Parent = detail, Name = slot .. "Key", Size = UDim2.fromScale(0.17, 0.075), Position = UDim2.fromScale(0.05, y + 0.012), Color = C.PanelLight, Stroke = C.Magenta, Corner = 6 })
-	local key = UI.Label({ Parent = badge, Text = slot == "Primary" and "LMB" or (Labels[slot] or slot), Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.8), Position = UDim2.fromScale(0.05, 0.1), MaxSize = 16 })
-	local name = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.7, 0.05), Position = UDim2.fromScale(0.25, y), AlignX = Enum.TextXAlignment.Left, MaxSize = 17, Rich = true })
-	local text = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Body, Color = C.Subtext, Size = UDim2.fromScale(0.72, 0.07), Position = UDim2.fromScale(0.25, y + 0.045), AlignX = Enum.TextXAlignment.Left, AlignY = Enum.TextYAlignment.Top, MaxSize = 14 })
+	local badge = UI.Panel({ Parent = detail, Name = slot .. "Key", Size = UDim2.fromScale(0.10, 0.095), Position = UDim2.fromScale(0.05, y), Color = C.PanelLight, Stroke = C.Magenta, Corner = 6 })
+	local key = UI.Label({ Parent = badge, Text = slot == "Primary" and "LMB" or (Labels[slot] or slot), Font = UI.Fonts.Title, Size = UDim2.fromScale(0.9, 0.8), Position = UDim2.fromScale(0.05, 0.1), MaxSize = 15 })
+	-- icon square showing the ability art (IconConfig); stroked in the viewed hero's colour at runtime
+	local iconPanel = UI.Panel({ Parent = detail, Name = slot .. "Icon", Size = UDim2.fromScale(0.10, 0.095), Position = UDim2.fromScale(0.175, y), Color = C.Bg, Transparency = 0.15, Stroke = C.Subtext, StrokeThickness = 1.5, Corner = 8 })
+	local icon = UI.Icon({ Parent = iconPanel, Icon = "Token", Size = UDim2.fromScale(0.84, 0.84), Position = UDim2.fromScale(0.08, 0.08) })
+	-- cooldown pill pinned to the right edge of the row
+	local cdPanel = UI.Panel({ Parent = detail, Name = slot .. "Cd", Size = UDim2.fromScale(0.16, 0.05), Position = UDim2.fromScale(0.95, y + 0.02), AnchorPoint = Vector2.new(1, 0), Color = C.PanelLight, Corner = 6 })
+	local cd = UI.Label({ Parent = cdPanel, Text = "", Font = UI.Fonts.Bold, Size = UDim2.fromScale(0.9, 0.75), Position = UDim2.fromScale(0, 0.12), MaxSize = 14 })
+	local name = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.48, 0.05), Position = UDim2.fromScale(0.29, y), AlignX = Enum.TextXAlignment.Left, MaxSize = 17 })
+	local text = UI.Label({ Parent = detail, Text = "", Font = UI.Fonts.Body, Color = C.Subtext, Size = UDim2.fromScale(0.50, 0.07), Position = UDim2.fromScale(0.29, y + 0.045), AlignX = Enum.TextXAlignment.Left, AlignY = Enum.TextYAlignment.Top, MaxSize = 14 })
 	text.TextWrapped = true
-	abilityRows[slot] = { Key = key, Name = name, Text = text }
+	abilityRows[slot] = { Key = key, Y = y, IconPanel = iconPanel, Icon = icon, IconStroke = iconPanel:FindFirstChildOfClass("UIStroke"), Name = name, Text = text, CdPanel = cdPanel, Cd = cd }
 end
 -- same text size on every ability description (TextScaled would shrink long lines more than short ones)
 local function syncAbilityText()
@@ -339,11 +379,28 @@ local function showHero(id: string)
 	for slot, row in pairs(abilityRows) do
 		local ab = a[slot]
 		if ab then
-			local cd = ""
-			if slot == "Ultimate" then cd = "  <font color=\"#ffc83c\">ULT</font>"
-			elseif ab.Cooldown then cd = string.format("  <font color=\"#8c96b9\">%ds</font>", ab.Cooldown) end
-			row.Name.Text = ab.Name .. cd
+			row.Name.Text = ab.Name
 			row.Text.Text = ab.Text
+			-- icon art + hero-coloured frame (the Primary weapon fire has no art: key badge only)
+			local hasIcon = typeof(ab.Icon) == "string" and ab.Icon ~= ""
+			row.IconPanel.Visible = hasIcon
+			if hasIcon then
+				row.Icon.Image = IconConfig.Get(ab.Icon)
+				if row.IconStroke then row.IconStroke.Color = h.Color end
+			end
+			local nameX = hasIcon and 0.29 or 0.175
+			row.Name.Position = UDim2.fromScale(nameX, row.Y)
+			row.Text.Position = UDim2.fromScale(nameX, row.Y + 0.045)
+			-- cooldown info: gold ULT pill, grey cooldown pill, hidden for the primary
+			if slot == "Ultimate" then
+				row.CdPanel.Visible = true
+				row.Cd.Text = "ULT"; row.Cd.TextColor3 = C.Gold
+			elseif typeof(ab.Cooldown) == "number" then
+				row.CdPanel.Visible = true
+				row.Cd.Text = ab.Cooldown .. "s CD"; row.Cd.TextColor3 = C.Subtext
+			else
+				row.CdPanel.Visible = false
+			end
 		end
 	end
 	if isUnlocked(id) then
