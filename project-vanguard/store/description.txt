@@ -1,0 +1,21 @@
+⚡ PROJECT VANGUARD - neon hero shooter ⚡
+
+Pick your hero, master their abilities and fight for your team in fast first-person arena battles!
+
+🦸 9 UNIQUE HEROES - Assault, Sniper, Tank, Support, Assassin, Controller, Duelist, Engineer and Recon. Every hero has their own weapon, dash, skill and ULTIMATE.
+
+🎮 MODES
+• 5v5 team battles
+• 1v1 duels
+• Ranked - climb from Bronze all the way to Vanguard rank
+• Practice against bots
+
+🔥 FEATURES
+• Aim down sights, headshots and kill streaks
+• Death cam - see who got you and how
+• Weapon skins with special effects (Arctic, Royal Gold, Crystal Void, Inferno)
+• Daily rewards, Hall of Fame leaderboards and a neon lobby to hang out in
+
+No team? Bots fill empty slots so a match always starts.
+
+👍 Like and favorite to support new heroes and maps!
