@@ -5,13 +5,21 @@
 --   * keep the arms in that grip (a little of the walk/run swing is kept so they don't look frozen)
 --   * tilt the upper body + head with the aim pitch (own camera for you, AimPitch attribute for others)
 -- Ability/emote/victory animations (Action priority or higher) take over the arms while they play.
+-- Also:
+--   * firing kick: when a hero shoots, their upper body and arms jolt by the weapon's weight (melee = twist)
+--   * size feel: footsteps sound heavier on big heroes and lighter on small ones, tanks land with a thud
+--     ring (+ a small camera shake for you), and your first-person camera sits at your hero's eye height
 -- Visual only, runs on every client for every hero in view. Also reports your own pitch to the server.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
-local AimPitch = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("AimPitch") :: UnreliableRemoteEvent
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local AimPitch = Remotes:WaitForChild("AimPitch") :: UnreliableRemoteEvent
+local CombatFx = Remotes:WaitForChild("CombatFx") :: RemoteEvent
 
 local ARM_JOINTS = {
 	{ "RightUpperArm", "RightShoulder" }, { "RightLowerArm", "RightElbow" }, { "RightHand", "RightWrist" },
@@ -19,6 +27,15 @@ local ARM_JOINTS = {
 }
 local ARM_SWING_KEEP = 0.12 -- how much of the walk animation still moves the arms
 local TORSO_SHARE, NECK_SHARE = 0.65, 0.35 -- how the aim pitch is split between waist and neck
+
+-- firing kick per weapon (radians of upper-body jolt); melee weapons twist instead
+local KICK = {
+	PrecisionRifle = 0.32, HeavyCannon = 0.3, Scattergun = 0.28, RivetGun = 0.16, LightningGauntlet = 0.14,
+	BurstRifle = 0.09, PulseSMG = 0.06, MedicalProjector = 0.04, EnergyBlades = 0.35,
+}
+local MELEE = { EnergyBlades = true }
+local KICK_MAX, KICK_RECOVER = 0.45, 11 -- cap, and how fast it settles (per second)
+local BASE_HEIGHT = 5.6 -- standard hero height; bigger/smaller heroes sound and land heavier/lighter
 
 -- Joints are Motor6Ds on classic rigs and AnimationConstraints on the newer avatar joint system;
 -- both expose .Transform, which the Animator writes and we override afterwards.
@@ -30,6 +47,10 @@ type Rig = {
 	neck: Joint?,
 	animator: Animator?,
 	nextResolve: number,
+	shoulders: { Joint },
+	kick: number,
+	melee: boolean,
+	height: number,
 	pitch: number,
 	actionUntil: number,
 	nextActionCheck: number,
@@ -56,6 +77,11 @@ local function resolve(rig: Rig)
 	rig.neck = joint(model, "Head", "Neck")
 	local hum = model:FindFirstChildOfClass("Humanoid")
 	rig.animator = hum and hum:FindFirstChildOfClass("Animator")
+	rig.shoulders = {}
+	for _, n in ipairs({ "RightShoulder", "LeftShoulder" }) do
+		local j = joint(model, n == "RightShoulder" and "RightUpperArm" or "LeftUpperArm", n)
+		if j then table.insert(rig.shoulders, j) end
+	end
 end
 local function needsResolve(rig: Rig): boolean
 	if #rig.arms < #ARM_JOINTS or not rig.waist or not rig.neck or not rig.animator then return true end
@@ -64,11 +90,13 @@ local function needsResolve(rig: Rig): boolean
 	return false
 end
 
+local setupSizeFeel: (Rig) -> ()
 local function track(model: Model)
 	if rigs[model] or not model:GetAttribute("HeroBody") then return end
-	local rig: Rig = { model = model, arms = {}, nextResolve = 0, pitch = 0, actionUntil = 0, nextActionCheck = 0 }
+	local rig: Rig = { model = model, arms = {}, shoulders = {}, nextResolve = 0, pitch = 0, actionUntil = 0, nextActionCheck = 0, kick = 0, melee = false, height = model:GetExtentsSize().Y }
 	resolve(rig)
 	rigs[model] = rig
+	task.spawn(setupSizeFeel, rig)
 	model.AncestryChanged:Connect(function(_, parent)
 		if not parent then rigs[model] = nil end
 	end)
@@ -86,9 +114,132 @@ end
 workspace.DescendantAdded:Connect(function(d)
 	if d:IsA("Humanoid") and d.Parent and d.Parent:IsA("Model") then watch(d.Parent :: Model) end
 end)
-task.spawn(function()
+task.defer(function() -- deferred: runs after the whole script (and setupSizeFeel) has loaded
 	for _, d in ipairs(workspace:GetDescendants()) do
 		if d:IsA("Humanoid") and d.Parent and d.Parent:IsA("Model") then watch(d.Parent :: Model) end
+	end
+end)
+
+
+---------------------------------------------------------------- size feel
+-- footsteps: deeper + louder for big heroes, lighter + quieter for small ones (Roblox's own "Running" sound)
+local function tuneFootsteps(rig: Rig)
+	local root = rig.model:FindFirstChild("HumanoidRootPart")
+	local running = root and root:FindFirstChild("Running")
+	if not running or not running:IsA("Sound") then return false end
+	if running:FindFirstChild("HeroStep") then return true end
+	local size = rig.height / BASE_HEIGHT
+	local pitch = Instance.new("PitchShiftSoundEffect")
+	pitch.Name = "HeroStep"
+	pitch.Octave = math.clamp(1 / size ^ 1.4, 0.75, 1.25)
+	pitch.Parent = running
+	if size > 1.08 then
+		local eq = Instance.new("EqualizerSoundEffect")
+		eq.Name = "HeroStepBass"
+		eq.LowGain = 7; eq.MidGain = 0; eq.HighGain = -6
+		eq.Parent = running
+	end
+	running.Volume = math.clamp(running.Volume * size ^ 2.5, 0.2, 1.2)
+	return true
+end
+
+-- heavy landing: a dust ring at the feet for big heroes (everyone sees it) + a small shake for yourself
+local function landingRing(at: Vector3, radius: number)
+	local p = Instance.new("Part")
+	p.Anchored = true; p.CanCollide = false; p.CanQuery = false; p.CanTouch = false; p.CastShadow = false
+	p.Shape = Enum.PartType.Cylinder
+	p.Material = Enum.Material.Neon
+	p.Color = Color3.fromRGB(200, 220, 255)
+	p.Transparency = 0.4
+	p.Size = Vector3.new(0.15, 1, 1)
+	p.CFrame = CFrame.new(at) * CFrame.Angles(0, 0, math.pi / 2)
+	p.Parent = workspace
+	TweenService:Create(p, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = Vector3.new(0.05, radius * 2, radius * 2), Transparency = 1 }):Play()
+	Debris:AddItem(p, 0.5)
+end
+local shakeLeft, shakeAmp = 0, 0
+RunService:BindToRenderStep("VG_LandShake", Enum.RenderPriority.Camera.Value + 3, function(dt)
+	if shakeLeft <= 0 then return end
+	shakeLeft -= dt
+	local a = shakeAmp * math.max(shakeLeft, 0) / 0.25
+	local cam = workspace.CurrentCamera
+	cam.CFrame = cam.CFrame * CFrame.new((math.random() - 0.5) * a, (math.random() - 0.5) * a, 0)
+end)
+
+function setupSizeFeel(rig: Rig)
+	local model = rig.model
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	task.wait(0.3) -- let every body part arrive before measuring
+	if not model.Parent then return end
+	rig.height = model:GetExtentsSize().Y
+	-- footsteps (the sound is created a moment after spawn)
+	for _ = 1, 20 do
+		if not model.Parent or tuneFootsteps(rig) then break end
+		task.wait(0.25)
+	end
+	-- tanks land heavy
+	if rig.height / BASE_HEIGHT > 1.08 then
+		local fallSpeed = 0
+		hum.StateChanged:Connect(function(_, new)
+			local root = model:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if not root then return end
+			if new == Enum.HumanoidStateType.Freefall then
+				fallSpeed = 0
+			elseif new == Enum.HumanoidStateType.Landed and fallSpeed > 22 then
+				landingRing(root.Position - Vector3.new(0, hum.HipHeight + root.Size.Y / 2 - 0.1, 0), math.clamp(fallSpeed / 5, 5, 10))
+				if model == player.Character then
+					shakeLeft, shakeAmp = 0.25, math.clamp(fallSpeed / 120, 0.12, 0.35)
+				end
+			end
+		end)
+		local hb: RBXScriptConnection
+		hb = RunService.Heartbeat:Connect(function()
+			if not model.Parent then hb:Disconnect() return end
+			local root = model:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if root and hum:GetState() == Enum.HumanoidStateType.Freefall then
+				fallSpeed = math.max(fallSpeed, -root.AssemblyLinearVelocity.Y)
+			end
+		end)
+	end
+	-- your own first-person camera at your hero's eye height (Roblox puts it 2 studs above the root part
+	-- for unscaled R15 bodies, which is too low for Titan and too high for Shade)
+	if model == player.Character then
+		task.wait(0.2)
+		local root = model:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local head = model:FindFirstChild("Head") :: BasePart?
+		if root and head and model.Parent then
+			local eye = root.CFrame:PointToObjectSpace(head.Position).Y + head.Size.Y * 0.12
+			hum.CameraOffset = Vector3.new(0, eye - 2, 0)
+		end
+	end
+end
+
+---------------------------------------------------------------- firing kick (other players + bots)
+local function rigNear(pos: Vector3): Rig?
+	local best, bestD = nil, 6
+	for _, rig in pairs(rigs) do
+		local root = rig.model:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root then
+			local d = (root.Position - pos).Magnitude
+			if d < bestD then best, bestD = rig, d end
+		end
+	end
+	return best
+end
+CombatFx.OnClientEvent:Connect(function(data)
+	if typeof(data) ~= "table" then return end
+	if data.Type ~= "Shot" and data.Type ~= "Projectile" and data.Type ~= "Melee" then return end
+	if data.Shooter == player.UserId then return end -- you are in first person; your viewmodel already kicks
+	local amount = KICK[data.Weapon]
+	if not amount then return end
+	local rig: Rig? = nil
+	local shooter = typeof(data.Shooter) == "number" and data.Shooter > 0 and Players:GetPlayerByUserId(data.Shooter) or nil
+	if shooter and shooter.Character then rig = rigs[shooter.Character] end
+	if not rig and typeof(data.From) == "Vector3" then rig = rigNear(data.From) end -- bots
+	if rig then
+		rig.melee = MELEE[data.Weapon] == true
+		rig.kick = math.min(rig.kick + amount, KICK_MAX)
 	end
 end)
 
@@ -120,11 +271,22 @@ RunService.PreSimulation:Connect(function(dt)
 		end
 		local target = if model == myChar then ownPitch() else ((model:GetAttribute("AimPitch") :: number?) or 0)
 		rig.pitch += (target - rig.pitch) * math.min(1, dt * 14)
+		rig.kick *= math.exp(-dt * KICK_RECOVER)
 		if now < rig.actionUntil then continue end
 		for _, m in ipairs(rig.arms) do
 			m.Transform = CFrame.identity:Lerp(m.Transform, ARM_SWING_KEEP)
 		end
-		if rig.waist then rig.waist.Transform = CFrame.Angles(rig.pitch * TORSO_SHARE, 0, 0) end
+		local k = rig.kick
+		if k > 0.005 and not rig.melee then
+			for _, sh in ipairs(rig.shoulders) do sh.Transform = CFrame.Angles(k * 0.9, 0, 0) * sh.Transform end -- gun rises
+		end
+		if rig.waist then
+			local waist = CFrame.Angles(rig.pitch * TORSO_SHARE, 0, 0)
+			if k > 0.005 then
+				waist = if rig.melee then waist * CFrame.Angles(-k * 0.3, k, 0) else waist * CFrame.Angles(k * 0.6, 0, 0)
+			end
+			rig.waist.Transform = waist
+		end
 		if rig.neck then rig.neck.Transform = CFrame.Angles(rig.pitch * NECK_SHARE, 0, 0) end
 	end
 end)

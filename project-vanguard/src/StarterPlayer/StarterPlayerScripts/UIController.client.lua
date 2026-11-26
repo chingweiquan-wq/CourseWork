@@ -1191,6 +1191,8 @@ local function buildSkinTab(items: ScrollingFrame, template: Frame)
 	end
 	skinItems.Visible = false
 	skinItems.Parent = items.Parent
+	skinItems.AutomaticCanvasSize = Enum.AutomaticSize.Y -- 18 skins: let the list scroll
+	skinItems.CanvasSize = UDim2.new()
 	for i, skin in ipairs(SkinConfig.All()) do
 		local rarity = SkinConfig.Rarities[skin.Rarity]
 		local card = template:Clone()
@@ -1339,7 +1341,7 @@ local invDim, invBody = makeModal(invGui, "WEAPON SKINS", C.Cyan)
 invDim.Name = "InventoryMenu"
 local weaponList = Instance.new("Frame"); weaponList.Name = "Weapons"; weaponList.BackgroundTransparency = 1
 weaponList.Size = UDim2.fromScale(0.26, 1); weaponList.Parent = invBody
-local wl = Instance.new("UIListLayout"); wl.Padding = UDim.new(0.02, 0); wl.SortOrder = Enum.SortOrder.LayoutOrder; wl.Parent = weaponList
+local wl = Instance.new("UIListLayout"); wl.Padding = UDim.new(0.012, 0); wl.SortOrder = Enum.SortOrder.LayoutOrder; wl.Parent = weaponList
 local invPanel = UI.Panel({ Parent = invBody, Name = "Preview", Size = UDim2.fromScale(0.72, 1), Position = UDim2.fromScale(0.28, 0), Color = C.Panel, Stroke = C.Cyan })
 local _, setInvPreview = weaponPreview(invPanel, UDim2.fromScale(0.62, 0.56), UDim2.fromScale(0.02, 0.02), true)
 local invName = UI.Label({ Parent = invPanel, Text = "", Font = UI.Fonts.Title, Size = UDim2.fromScale(0.34, 0.1), Position = UDim2.fromScale(0.64, 0.05), AlignX = Enum.TextXAlignment.Left, MaxSize = 30 })
@@ -1363,7 +1365,7 @@ local function weaponOwners(weaponId: string): string
 end
 
 for i, weaponId in ipairs(SkinConfig.WeaponOrder) do
-	local b = UI.Button({ Parent = weaponList, Name = weaponId, Text = SkinConfig.WeaponNames[weaponId], Size = UDim2.fromScale(1, 0.145), Accent = C.Cyan, MaxSize = 18 })
+	local b = UI.Button({ Parent = weaponList, Name = weaponId, Text = SkinConfig.WeaponNames[weaponId], Size = UDim2.fromScale(1, 0.1), Accent = C.Cyan, MaxSize = 18 }) -- 9 weapons fit
 	b.LayoutOrder = i
 	b.MouseButton1Click:Connect(function()
 		invWeapon = weaponId

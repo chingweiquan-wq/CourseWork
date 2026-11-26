@@ -11,6 +11,7 @@ local CollectionService = game:GetService("CollectionService")
 
 local GameConfig = require(ReplicatedStorage.Modules.GameConfig)
 local WeaponConfig = require(ReplicatedStorage.Modules.WeaponConfig)
+local SkinConfig = require(ReplicatedStorage.Modules.SkinConfig)
 local MatchManager = require(script.Parent.MatchManager)
 local CharacterService = require(script.Parent.CharacterService)
 
@@ -242,6 +243,16 @@ function CombatService.WatchDeath(model: Model, humanoid: Humanoid)
 		local victimBot = MatchManager.GetBotByModel(match, model)
 		local victimName = if victimPlayer then victimPlayer.DisplayName elseif victimBot then victimBot.Name else (model:GetAttribute("DisplayName") or model.Name)
 		MatchManager.RecordElimination(match, killer, victimPlayer, victimName :: string, assisters, entry and entry.Weapon or nil, entry and entry.Headshot or false, killerBot, victimBot)
+
+		-- skin kill effect: anyone killed by a player with a skinned weapon bursts in that skin's style
+		if killer then
+			local weaponId = killer:GetAttribute("WeaponId")
+			local skinId = typeof(weaponId) == "string" and SkinConfig.EquippedFor(killer, weaponId) or nil
+			local root = model:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if skinId and root then
+				matchPlayersFx(match.Id, { Type = "SkinKill", Shooter = killer.UserId, Weapon = weaponId, Skin = skinId, Position = root.Position })
+			end
+		end
 
 		-- death cam info for a player victim: killer (player or bot), weapon, killer HP, damage breakdown
 		if victimPlayer and DeathCam then
@@ -516,7 +527,7 @@ local function explode(proj: Projectile, pos: Vector3, direct: Combatant?)
 			end
 		end
 	end
-	matchPlayersFx(proj.MatchId, { Type = "Impact", Id = proj.Id, Weapon = w.Id, Position = pos, Radius = w.SplashRadius or 0 })
+	matchPlayersFx(proj.MatchId, { Type = "Impact", Id = proj.Id, Shooter = proj.Shooter and proj.Shooter.UserId or 0, Weapon = w.Id, Position = pos, Radius = w.SplashRadius or 0 })
 end
 
 local function spawnProjectile(player: Player, character: Model, w: any, origin: Vector3, dir: Vector3, matchId: string)
@@ -549,7 +560,7 @@ local function stepProjectiles(dt: number)
 			else
 				CombatService.DamageShield(proj.Shooter :: Player, result.Instance :: BasePart, proj.Weapon.Damage * mods(proj.Shooter :: Player).DamageMult)
 			end
-			matchPlayersFx(proj.MatchId, { Type = "Impact", Id = proj.Id, Weapon = proj.Weapon.Id, Position = result.Position, Radius = 0 })
+			matchPlayersFx(proj.MatchId, { Type = "Impact", Id = proj.Id, Shooter = proj.Shooter and proj.Shooter.UserId or 0, Weapon = proj.Weapon.Id, Position = result.Position, Radius = 0 })
 			table.remove(projectiles, i)
 			continue
 		end
@@ -570,7 +581,7 @@ local function stepProjectiles(dt: number)
 			local alive = projAlive(proj)
 			if proj.Travelled >= proj.Weapon.Range or not alive then
 				if alive then
-					matchPlayersFx(proj.MatchId, { Type = "Impact", Id = proj.Id, Weapon = proj.Weapon.Id, Position = proj.Pos, Radius = 0 })
+					matchPlayersFx(proj.MatchId, { Type = "Impact", Id = proj.Id, Shooter = proj.Shooter and proj.Shooter.UserId or 0, Weapon = proj.Weapon.Id, Position = proj.Pos, Radius = 0 })
 				end
 				remove = true
 			end

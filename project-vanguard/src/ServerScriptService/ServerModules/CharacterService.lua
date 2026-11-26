@@ -213,9 +213,12 @@ local function setupCharacter(player: Player, character: Model)
 		humanoid.WalkSpeed = hero.Stats.WalkSpeed
 		player:SetAttribute("WeaponId", hero.WeaponId)
 		character:WaitForChild("RightHand", 5)
-		if not applyHeroBody(character, heroId) then -- fallback: recoloured avatar + helmet + welded weapon
+		local skinId = SkinConfig.EquippedFor(player, hero.WeaponId)
+		if applyHeroBody(character, heroId) then
+			SkinVisuals.ApplyAura(character, skinId) -- the weapon is part of the body, so the skin shows as an aura
+		else -- fallback: recoloured avatar + helmet + welded (skinned) weapon
 			applyHeroLook(character, heroId)
-			buildWorldWeapon(character, hero.WeaponId, SkinConfig.EquippedFor(player, hero.WeaponId))
+			buildWorldWeapon(character, hero.WeaponId, skinId)
 		end
 		local ff = Instance.new("ForceField")
 		ff.Visible = true

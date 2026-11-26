@@ -12,6 +12,7 @@ local player = Players.LocalPlayer
 local WeaponConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("WeaponConfig"))
 local SkinConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("SkinConfig"))
 local SkinVisuals = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("SkinVisuals"))
+local SkinFX = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("SkinFX"))
 local Sfx = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Sfx"))
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local FireRemote = Remotes:WaitForChild("Fire")
@@ -167,6 +168,10 @@ end
 local function tracerColorFor(userId: number?, w: any): Color3
 	local shooter = userId and Players:GetPlayerByUserId(userId) or nil
 	return SkinVisuals.TracerColor(SkinConfig.EquippedFor(shooter, w.Id), w.TracerColor)
+end
+local function skinOf(userId: number?, w: any): string?
+	local shooter = userId and Players:GetPlayerByUserId(userId) or nil
+	return SkinConfig.EquippedFor(shooter, w.Id)
 end
 
 local function startVisualProjectile(key: any, from: Vector3, vel: Vector3, w: any, color: Color3?)
@@ -368,21 +373,28 @@ local function fireOnce(): boolean
 	local dir = spreadDirection(cam.CFrame.LookVector, (w.Spread or 0) * (1 - aimBlend * (1 - WeaponConfig.Aim.SpreadMult)))
 	local muzzle = muzzlePosition()
 	local tcol = tracerColorFor(player.UserId, w)
+	local mySkin = skinOf(player.UserId, w)
 
 	if w.Type == "Hitscan" and w.Pellets then
 		-- shotgun: draw the same fixed pellet pattern the server uses; the server decides the hits
-		for _, d in ipairs(WeaponConfig.PelletDirs(dir, w)) do
+		for i, d in ipairs(WeaponConfig.PelletDirs(dir, w)) do
 			local result = workspace:Raycast(origin, d * w.Range, clientParams())
 			local to = result and result.Position or origin + d * w.Range
 			tracer(muzzle, to, tcol, 0.05)
-			if result then impact(to, tcol, 0) end
+			if result then
+				impact(to, tcol, 0)
+				if i <= 3 then SkinFX.Impact(to, mySkin) end -- a few pellets is plenty
+			end
 		end
 		FireRemote:FireServer(origin, dir)
 	elseif w.Type == "Hitscan" then
 		local result = workspace:Raycast(origin, dir * w.Range, clientParams())
 		local to = result and result.Position or origin + dir * w.Range
 		tracer(muzzle, to, tcol, w.Damage >= 50 and 0.14 or 0.06)
-		if result then impact(to, tcol, 0) end
+		if result then
+			impact(to, tcol, 0)
+			SkinFX.Impact(to, mySkin)
+		end
 		FireRemote:FireServer(origin, dir, result and result.Instance or nil)
 	elseif w.Type == "Projectile" then
 		FireRemote:FireServer(origin, dir)
@@ -392,7 +404,10 @@ local function fireOnce(): boolean
 		FireRemote:FireServer(origin, dir)
 		slash(origin - Vector3.new(0, 0.5, 0), Vector3.new(dir.X, 0, dir.Z), w.Color)
 	end
-	if w.Type ~= "Melee" then flash(muzzle, tcol, 0.6, dir) end
+	if w.Type ~= "Melee" then
+		flash(muzzle, tcol, 0.6, dir)
+		SkinFX.Muzzle(muzzle, dir, mySkin)
+	end
 	Sfx.Play("Fire_" .. w.Id)
 
 	-- recoil: viewmodel kick + small camera kick (bigger for heavy single shots)
@@ -550,21 +565,27 @@ CombatFx.OnClientEvent:Connect(function(data)
 	if not w then return end
 	local mine = data.Shooter == player.UserId
 	local tcol = tracerColorFor(data.Shooter, w)
-	if data.Type == "Shot" and not mine and typeof(data.Pellets) == "table" then
-		for _, to in ipairs(data.Pellets) do
+	local skin = skinOf(data.Shooter, w)
+	if data.Type == "SkinKill" then
+		if typeof(data.Position) == "Vector3" and typeof(data.Skin) == "string" then SkinFX.Kill(data.Position, data.Skin) end
+	elseif data.Type == "Shot" and not mine and typeof(data.Pellets) == "table" then
+		for i, to in ipairs(data.Pellets) do
 			if typeof(to) == "Vector3" then
 				tracer(data.From, to, tcol, 0.05)
 				impact(to, tcol, 0)
+				if i <= 3 then SkinFX.Impact(to, skin) end
 			end
 		end
 	elseif data.Type == "Shot" and not mine then
 		tracer(data.From, data.To, tcol, w.Damage >= 50 and 0.14 or 0.06)
 		impact(data.To, tcol, 0)
+		SkinFX.Impact(data.To, skin)
 	elseif data.Type == "Projectile" and not mine then
 		startVisualProjectile(data.Id, data.From, data.Velocity, w, tcol)
 	elseif data.Type == "Impact" then
 		stopVisual(data.Id)
 		impact(data.Position, tcol, data.Radius or 0)
+		SkinFX.Impact(data.Position, skin)
 	elseif data.Type == "Melee" and not mine then
 		slash(data.From, data.Dir, w.Color)
 	end

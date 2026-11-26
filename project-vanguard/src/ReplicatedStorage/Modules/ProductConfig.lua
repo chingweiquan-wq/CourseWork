@@ -28,6 +28,12 @@ ProductConfig.SkinProducts = {
 	PrecisionRifle_Void = 3736044186,
 	MedicalProjector_Void = 3736044188,
 	EnergyBlades_Void = 3736044193,
+	Scattergun_Arctic = 3736365341,
+	RivetGun_Arctic = 3736365345,
+	PulseSMG_Arctic = 3736365349,
+	Scattergun_Inferno = 3736365354,
+	RivetGun_Inferno = 3736365360,
+	PulseSMG_Inferno = 3736365362,
 }
 
 -- Token packs (Robux -> tokens). The Starter pack can be bought once per account (enforced on the server).

@@ -21,8 +21,11 @@ SkinConfig.WeaponNames = {
 	MedicalProjector = "Medical Projector",
 	EnergyBlades = "Energy Blades",
 	LightningGauntlet = "Lightning Gauntlet",
+	Scattergun = "Scattergun",
+	RivetGun = "Rivet Gun",
+	PulseSMG = "Pulse SMG",
 }
-SkinConfig.WeaponOrder = { "BurstRifle", "PrecisionRifle", "HeavyCannon", "MedicalProjector", "EnergyBlades", "LightningGauntlet" }
+SkinConfig.WeaponOrder = { "BurstRifle", "PrecisionRifle", "HeavyCannon", "MedicalProjector", "EnergyBlades", "LightningGauntlet", "Scattergun", "RivetGun", "PulseSMG" }
 
 SkinConfig.Skins = {
 	-- Uncommon: Arctic camo (white and grey with icy blue sheen)
@@ -32,6 +35,9 @@ SkinConfig.Skins = {
 	MedicalProjector_Arctic = { Id = "MedicalProjector_Arctic", Weapon = "MedicalProjector", Name = "Arctic Projector", Rarity = "Uncommon", Theme = "Arctic" },
 	EnergyBlades_Arctic = { Id = "EnergyBlades_Arctic", Weapon = "EnergyBlades", Name = "Arctic Blades", Rarity = "Uncommon", Theme = "Arctic" },
 	LightningGauntlet_Arctic = { Id = "LightningGauntlet_Arctic", Weapon = "LightningGauntlet", Name = "Arctic Gauntlet", Rarity = "Uncommon", Theme = "Arctic" },
+	Scattergun_Arctic = { Id = "Scattergun_Arctic", Weapon = "Scattergun", Name = "Arctic Scattergun", Rarity = "Uncommon", Theme = "Arctic" },
+	RivetGun_Arctic = { Id = "RivetGun_Arctic", Weapon = "RivetGun", Name = "Arctic Rivet Gun", Rarity = "Uncommon", Theme = "Arctic" },
+	PulseSMG_Arctic = { Id = "PulseSMG_Arctic", Weapon = "PulseSMG", Name = "Arctic Pulse", Rarity = "Uncommon", Theme = "Arctic" },
 	-- Legendary: Royal Gold
 	BurstRifle_Gold = { Id = "BurstRifle_Gold", Weapon = "BurstRifle", Name = "Royal Gold Burst", Rarity = "Legendary", Theme = "Gold" },
 	HeavyCannon_Gold = { Id = "HeavyCannon_Gold", Weapon = "HeavyCannon", Name = "Royal Gold Cannon", Rarity = "Legendary", Theme = "Gold" },
@@ -40,6 +46,10 @@ SkinConfig.Skins = {
 	PrecisionRifle_Void = { Id = "PrecisionRifle_Void", Weapon = "PrecisionRifle", Name = "Void Crystal Rifle", Rarity = "Legendary", Theme = "Void" },
 	MedicalProjector_Void = { Id = "MedicalProjector_Void", Weapon = "MedicalProjector", Name = "Void Crystal Projector", Rarity = "Legendary", Theme = "Void" },
 	EnergyBlades_Void = { Id = "EnergyBlades_Void", Weapon = "EnergyBlades", Name = "Void Crystal Blades", Rarity = "Legendary", Theme = "Void" },
+	-- Legendary: Inferno (molten lava, flames and embers)
+	Scattergun_Inferno = { Id = "Scattergun_Inferno", Weapon = "Scattergun", Name = "Inferno Scattergun", Rarity = "Legendary", Theme = "Inferno" },
+	RivetGun_Inferno = { Id = "RivetGun_Inferno", Weapon = "RivetGun", Name = "Inferno Rivet Gun", Rarity = "Legendary", Theme = "Inferno" },
+	PulseSMG_Inferno = { Id = "PulseSMG_Inferno", Weapon = "PulseSMG", Name = "Inferno Pulse", Rarity = "Legendary", Theme = "Inferno" },
 } :: { [string]: Skin }
 
 -- Skins for one weapon, Uncommon first.

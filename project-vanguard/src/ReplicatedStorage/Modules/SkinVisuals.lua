@@ -7,7 +7,11 @@
 --   Arctic (Uncommon)  frosty white body + thin icy-blue glass sheen
 --   Gold   (Legendary) polished gold + animated glowing gold aura + soft light, gold tracers
 --   Void   (Legendary) see-through violet crystal + animated violet/cyan aura + light, violet tracers
+--   Inferno(Legendary) molten cracked-lava metal + animated orange/yellow aura + light, fire tracers
 -- Animated parts are tagged "SkinFX"; SkinFXController (client) shifts their colour and pulses the light.
+-- Each theme also has an Fx style used by SkinFX (client): themed muzzle flash, hit sparks and kill burst,
+-- plus a body aura (ApplyAura, server) on the hero's weapon hand that every player sees.
+-- Uncommon themes stay subtle (Loud = false); Legendary themes get the full show (Loud = true).
 local CollectionService = game:GetService("CollectionService")
 
 local SkinConfig = require(script.Parent.SkinConfig)
@@ -20,12 +24,18 @@ export type Theme = {
 	ShiftA: Color3?, ShiftB: Color3?, -- animated aura colours
 	Light: Color3?,
 	Tracer: Color3?,
+	Fx: string?, -- "Frost" | "Gold" | "Void" | "Inferno": style of hit sparks / kill burst / aura
+	Loud: boolean?, -- Legendary: bigger particles, coins/shards/flames, kill burst, aura light
+	FxColor: Color3?, -- main colour of the effects
+	FxColor2: Color3?, -- secondary colour
 }
 
 SkinVisuals.Themes = {
 	Arctic = {
 		Material = Enum.Material.Snow, Color = Color3.fromRGB(226, 233, 242),
 		Shell = { Material = Enum.Material.Glass, Color = Color3.fromRGB(150, 210, 255), Transparency = 0.72, Scale = 1.012 },
+		Tracer = Color3.fromRGB(175, 225, 255),
+		Fx = "Frost", Loud = false, FxColor = Color3.fromRGB(190, 235, 255), FxColor2 = Color3.fromRGB(255, 255, 255),
 	},
 	Gold = {
 		Material = Enum.Material.Metal, Color = Color3.fromRGB(240, 186, 48), Reflectance = 0.3,
@@ -33,6 +43,7 @@ SkinVisuals.Themes = {
 		ShiftA = Color3.fromRGB(255, 200, 60), ShiftB = Color3.fromRGB(255, 250, 215),
 		Light = Color3.fromRGB(255, 210, 100),
 		Tracer = Color3.fromRGB(255, 205, 70),
+		Fx = "Gold", Loud = true, FxColor = Color3.fromRGB(255, 200, 50), FxColor2 = Color3.fromRGB(255, 245, 200),
 	},
 	Void = {
 		Material = Enum.Material.Glass, Color = Color3.fromRGB(95, 45, 170), Transparency = 0.12,
@@ -40,6 +51,15 @@ SkinVisuals.Themes = {
 		ShiftA = Color3.fromRGB(170, 90, 255), ShiftB = Color3.fromRGB(80, 200, 255),
 		Light = Color3.fromRGB(170, 110, 255),
 		Tracer = Color3.fromRGB(185, 110, 255),
+		Fx = "Void", Loud = true, FxColor = Color3.fromRGB(170, 90, 255), FxColor2 = Color3.fromRGB(80, 210, 255),
+	},
+	Inferno = {
+		Material = Enum.Material.CrackedLava, Color = Color3.fromRGB(255, 95, 30),
+		Shell = { Material = Enum.Material.ForceField, Color = Color3.fromRGB(255, 120, 30), Transparency = 0, Scale = 1.04 },
+		ShiftA = Color3.fromRGB(255, 70, 20), ShiftB = Color3.fromRGB(255, 210, 70),
+		Light = Color3.fromRGB(255, 130, 50),
+		Tracer = Color3.fromRGB(255, 120, 40),
+		Fx = "Inferno", Loud = true, FxColor = Color3.fromRGB(255, 110, 30), FxColor2 = Color3.fromRGB(255, 220, 90),
 	},
 } :: { [string]: Theme }
 
@@ -104,6 +124,66 @@ function SkinVisuals.Apply(model: Instance, skinId: string?)
 			light.Shadows = false
 			light.Parent = part
 			CollectionService:AddTag(light, "SkinFX")
+		end
+	end
+end
+
+-- Body aura: glowing particles around the hero's weapon hand so everyone can see your skin, now that the
+-- weapon is part of the hero body. Built on the server (replicates). Uncommon = a few soft sparkles;
+-- Legendary = dense themed particles + a light. Removes any previous aura first.
+local AURA_TEXTURE = {
+	Frost = "rbxasset://textures/particles/sparkles_main.dds",
+	Gold = "rbxasset://textures/particles/sparkles_main.dds",
+	Void = "rbxasset://textures/particles/sparkles_main.dds",
+	Inferno = "rbxasset://textures/particles/fire_main.dds",
+}
+function SkinVisuals.ApplyAura(character: Model, skinId: string?)
+	for _, d in ipairs(character:GetDescendants()) do
+		if d.Name == "SkinAura" then d:Destroy() end
+	end
+	local theme = SkinVisuals.GetTheme(skinId)
+	if not theme or not theme.Fx then return end
+	local loud = theme.Loud == true
+	local c1, c2 = theme.FxColor or theme.Color, theme.FxColor2 or Color3.new(1, 1, 1)
+	for _, handName in ipairs({ "RightHand", "LeftHand" }) do
+		local hand = character:FindFirstChild(handName)
+		if hand and hand:IsA("BasePart") and (loud or handName == "RightHand") then
+			local att = Instance.new("Attachment")
+			att.Name = "SkinAura"
+			att.Parent = hand
+			local pe = Instance.new("ParticleEmitter")
+			pe.Name = "SkinAura"
+			pe.Texture = AURA_TEXTURE[theme.Fx] or AURA_TEXTURE.Gold
+			pe.Color = ColorSequence.new(c1, c2)
+			pe.LightEmission = 1
+			pe.LightInfluence = 0
+			pe.Rate = loud and 14 or 4
+			pe.Lifetime = NumberRange.new(0.5, loud and 1.1 or 0.8)
+			pe.Speed = NumberRange.new(0.4, loud and 1.6 or 0.8)
+			pe.SpreadAngle = Vector2.new(180, 180)
+			pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, loud and 0.35 or 0.22), NumberSequenceKeypoint.new(1, 0) })
+			pe.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.1), NumberSequenceKeypoint.new(1, 1) })
+			pe.Rotation = NumberRange.new(0, 360)
+			pe.RotSpeed = NumberRange.new(-90, 90)
+			if theme.Fx == "Inferno" then
+				pe.Acceleration = Vector3.new(0, 3, 0) -- flames lick upwards
+			elseif theme.Fx == "Void" then
+				pe.Acceleration = Vector3.new(0, -0.5, 0)
+				pe.Drag = 2
+			elseif theme.Fx == "Gold" then
+				pe.Acceleration = Vector3.new(0, -2, 0) -- glitter falls
+			end
+			pe.Parent = att
+			if loud and handName == "RightHand" then
+				local light = Instance.new("PointLight")
+				light.Name = "SkinAura"
+				light.Color = theme.Light or c1
+				light.Range = 7
+				light.Brightness = 1.2
+				light.Shadows = false
+				light.Parent = hand
+				CollectionService:AddTag(light, "SkinFX") -- pulses with the weapon aura
+			end
 		end
 	end
 end
