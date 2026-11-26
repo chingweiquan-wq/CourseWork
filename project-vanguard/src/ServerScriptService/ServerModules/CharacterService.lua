@@ -139,12 +139,64 @@ function applyHeroLook(character: Model, heroId: string)
 	end
 end
 
+-- Hero bodies: each lobby statue rigged as an R15 body (ReplicatedStorage.HeroAssets.Bodies.<HeroId>,
+-- built by tools/build_hero_bodies.lua, pre-scaled by role). The statue's own weapon is part of the body
+-- mesh and its arms are rigged in the grip pose, so the hero is visibly holding their weapon; the client
+-- HeroPoseController keeps the arms in that grip and tilts the upper body with the player's aim.
+local BODY_PARTS = {
+	Head = Enum.BodyPartR15.Head, UpperTorso = Enum.BodyPartR15.UpperTorso, LowerTorso = Enum.BodyPartR15.LowerTorso,
+	LeftUpperArm = Enum.BodyPartR15.LeftUpperArm, LeftLowerArm = Enum.BodyPartR15.LeftLowerArm, LeftHand = Enum.BodyPartR15.LeftHand,
+	RightUpperArm = Enum.BodyPartR15.RightUpperArm, RightLowerArm = Enum.BodyPartR15.RightLowerArm, RightHand = Enum.BodyPartR15.RightHand,
+	LeftUpperLeg = Enum.BodyPartR15.LeftUpperLeg, LeftLowerLeg = Enum.BodyPartR15.LeftLowerLeg, LeftFoot = Enum.BodyPartR15.LeftFoot,
+	RightUpperLeg = Enum.BodyPartR15.RightUpperLeg, RightLowerLeg = Enum.BodyPartR15.RightLowerLeg, RightFoot = Enum.BodyPartR15.RightFoot,
+}
+local function applyHeroBody(character: Model, heroId: string): boolean
+	local bodies = HeroAssets and HeroAssets:FindFirstChild("Bodies")
+	local template = bodies and bodies:FindFirstChild(heroId) :: Model?
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not template or not humanoid or humanoid.RigType ~= Enum.HumanoidRigType.R15 then return false end
+	local tHum = template:FindFirstChildOfClass("Humanoid")
+	humanoid.AutomaticScalingEnabled = false -- the template is already the right size
+	for _, c in ipairs(character:GetChildren()) do
+		if c:IsA("Accessory") or c:IsA("Clothing") or c:IsA("ShirtGraphic") or c:IsA("BodyColors") or c:IsA("CharacterMesh") then
+			c:Destroy()
+		end
+	end
+	local clone = template:Clone()
+	local ok = true
+	for name, enum in pairs(BODY_PARTS) do
+		local part = clone:FindFirstChild(name)
+		if part and part:IsA("BasePart") then
+			for _, j in ipairs(part:GetChildren()) do if j:IsA("JointInstance") then j:Destroy() end end
+			part.Anchored = false
+			part.Parent = nil
+			local replaced = pcall(function() humanoid:ReplaceBodyPartR15(enum, part) end)
+			ok = ok and replaced
+		end
+	end
+	-- match the root part to the template so the feet sit on the ground at the template's hip height
+	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local tRoot = clone:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if root and tRoot then
+		root.Size = tRoot.Size
+		local a, ta = root:FindFirstChild("RootRigAttachment") :: Attachment?, tRoot:FindFirstChild("RootRigAttachment") :: Attachment?
+		if a and ta then a.CFrame = ta.CFrame end
+	end
+	clone:Destroy()
+	if tHum then humanoid.HipHeight = tHum.HipHeight end
+	humanoid:BuildRigFromAttachments()
+	character:SetAttribute("HeroBody", heroId)
+	return ok
+end
+
 -- Phase 9: bots wear the same hero look + weapon model as players (default skins).
 function CharacterService.DressAsHero(model: Model, heroId: string)
 	local hero = HeroConfig.Heroes[heroId]
 	if not hero then return end
-	applyHeroLook(model, heroId)
-	buildWorldWeapon(model, hero.WeaponId, nil)
+	if not applyHeroBody(model, heroId) then
+		applyHeroLook(model, heroId)
+		buildWorldWeapon(model, hero.WeaponId, nil)
+	end
 end
 
 local function setupCharacter(player: Player, character: Model)
@@ -161,8 +213,10 @@ local function setupCharacter(player: Player, character: Model)
 		humanoid.WalkSpeed = hero.Stats.WalkSpeed
 		player:SetAttribute("WeaponId", hero.WeaponId)
 		character:WaitForChild("RightHand", 5)
-		applyHeroLook(character, heroId)
-		buildWorldWeapon(character, hero.WeaponId, SkinConfig.EquippedFor(player, hero.WeaponId))
+		if not applyHeroBody(character, heroId) then -- fallback: recoloured avatar + helmet + welded weapon
+			applyHeroLook(character, heroId)
+			buildWorldWeapon(character, hero.WeaponId, SkinConfig.EquippedFor(player, hero.WeaponId))
+		end
 		local ff = Instance.new("ForceField")
 		ff.Visible = true
 		ff.Parent = character
@@ -206,6 +260,28 @@ function CharacterService.Init()
 	end
 	for _, p in ipairs(Players:GetPlayers()) do task.spawn(onPlayer, p) end
 	Players.PlayerAdded:Connect(onPlayer)
+
+	-- Aim pitch: each client reports where it is looking up/down (~10x a second) so everyone else can see
+	-- the hero aim. Visual only; clamped and rate-limited, stored on the character for HeroPoseController.
+	local remotes = ReplicatedStorage:WaitForChild("Remotes")
+	local aimEvent = remotes:FindFirstChild("AimPitch") :: UnreliableRemoteEvent?
+	if not aimEvent then
+		local r = Instance.new("UnreliableRemoteEvent")
+		r.Name = "AimPitch"
+		r.Parent = remotes
+		aimEvent = r
+	end
+	assert(aimEvent)
+	local lastAim: { [Player]: number } = {}
+	aimEvent.OnServerEvent:Connect(function(player: Player, pitch: any)
+		if typeof(pitch) ~= "number" or pitch ~= pitch then return end
+		local now = os.clock()
+		if lastAim[player] and now - lastAim[player] < 0.05 then return end
+		lastAim[player] = now
+		local char = player.Character
+		if char then char:SetAttribute("AimPitch", math.clamp(pitch, -1.3, 1.3)) end
+	end)
+	Players.PlayerRemoving:Connect(function(p) lastAim[p] = nil end)
 
 	SelectHero.OnServerEvent:Connect(function(player: Player, heroId: any)
 		if typeof(heroId) ~= "string" or not HeroConfig.Heroes[heroId] then return end

@@ -159,11 +159,11 @@ function spawnBot(match: any, bot: any)
 	hum.WalkSpeed = hero.Stats.WalkSpeed
 	hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.DisplayWhenDamaged
 	hum.BreakJointsOnDeath = true
-	CharacterService.DressAsHero(model, bot.HeroId)
 
 	local group = GameConfig.Modes[match.Mode].TeamBased and bot.Team or "FFA"
 	local markers = MapService.GetSpawnPoints(match.Map, group)
 	model.Parent = folder
+	CharacterService.DressAsHero(model, bot.HeroId) -- after parenting: body swaps need the model in the world
 	SpawnService.PlaceAtRandom(model, markers)
 	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
 	local head = model:FindFirstChild("Head") :: BasePart
