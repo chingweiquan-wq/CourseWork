@@ -5,6 +5,8 @@
 --   * keep the arms in that grip (a little of the walk/run swing is kept so they don't look frozen)
 --   * tilt the upper body + head with the aim pitch (own camera for you, AimPitch attribute for others)
 -- Ability/emote/victory animations (Action priority or higher) take over the arms while they play.
+-- Weapon holds: each hero's arms are driven by IK (IKControl) into that hero's own carry pose while
+-- idle/running, and snap up into a firing pose when they shoot or aim (HoldConfig has every style).
 -- Also:
 --   * firing kick: when a hero shoots, their upper body and arms jolt by the weapon's weight (melee = twist)
 --   * size feel: footsteps sound heavier on big heroes and lighter on small ones, tanks land with a thud
@@ -20,6 +22,7 @@ local Debris = game:GetService("Debris")
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local AimPitch = Remotes:WaitForChild("AimPitch") :: UnreliableRemoteEvent
 local CombatFx = Remotes:WaitForChild("CombatFx") :: RemoteEvent
+local HoldConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("HoldConfig"))
 
 local ARM_JOINTS = {
 	{ "RightUpperArm", "RightShoulder" }, { "RightLowerArm", "RightElbow" }, { "RightHand", "RightWrist" },
@@ -34,6 +37,11 @@ local KICK = {
 	BurstRifle = 0.09, PulseSMG = 0.06, MedicalProjector = 0.04, EnergyBlades = 0.35,
 }
 local MELEE = { EnergyBlades = true }
+-- ability/emote/victory tracks take the arms over; NOT Core (walk/run), whose enum value is higher than Action
+local ACTION_PRIORITY = {
+	[Enum.AnimationPriority.Action] = true, [Enum.AnimationPriority.Action2] = true,
+	[Enum.AnimationPriority.Action3] = true, [Enum.AnimationPriority.Action4] = true,
+}
 local KICK_MAX, KICK_RECOVER = 0.45, 11 -- cap, and how fast it settles (per second)
 local BASE_HEIGHT = 5.6 -- standard hero height; bigger/smaller heroes sound and land heavier/lighter
 
@@ -54,6 +62,17 @@ type Rig = {
 	pitch: number,
 	actionUntil: number,
 	nextActionCheck: number,
+	hold: HoldConfig.Hold?,
+	ikR: IKControl?,
+	ikL: IKControl?,
+	rTarget: Attachment?,
+	lTarget: Attachment?,
+	raise: number,
+	lastShot: number,
+	limits: { BallSocketConstraint }?, -- arm joint limits switched off while IK holds the weapon
+	leftRel: CFrame?, -- two-handed: support grip relative to the right grip (constant)
+	leftShoulder: Vector3?, -- torso space
+	leftReach: number?,
 }
 local rigs: { [Model]: Rig } = {}
 
@@ -93,7 +112,8 @@ end
 local setupSizeFeel: (Rig) -> ()
 local function track(model: Model)
 	if rigs[model] or not model:GetAttribute("HeroBody") then return end
-	local rig: Rig = { model = model, arms = {}, shoulders = {}, nextResolve = 0, pitch = 0, actionUntil = 0, nextActionCheck = 0, kick = 0, melee = false, height = model:GetExtentsSize().Y }
+	local rig: Rig = { model = model, arms = {}, shoulders = {}, nextResolve = 0, pitch = 0, actionUntil = 0, nextActionCheck = 0, kick = 0, melee = false, height = model:GetExtentsSize().Y,
+		hold = HoldConfig.Get(model:GetAttribute("HeroBody") :: string?), raise = 0, lastShot = -99 }
 	resolve(rig)
 	rigs[model] = rig
 	task.spawn(setupSizeFeel, rig)
@@ -120,6 +140,189 @@ task.defer(function() -- deferred: runs after the whole script (and setupSizeFee
 	end
 end)
 
+
+
+---------------------------------------------------------------- weapon holds (IK)
+-- Local-only IK rig per hero: targets live on the UpperTorso so the hold moves with the body.
+local IK_NAMES = { "VG_IK_R", "VG_IK_L" }
+local ATT_NAMES = { "VG_RTarget", "VG_LTarget", "VG_RPole", "VG_LPole" }
+local function ikReady(rig: Rig): boolean
+	return rig.ikR ~= nil and (rig.ikR :: IKControl).Parent ~= nil and rig.rTarget ~= nil and (rig.rTarget :: Attachment).Parent ~= nil
+end
+local function setupIK(rig: Rig)
+	local model, hold = rig.model, rig.hold
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	local torso = model:FindFirstChild("UpperTorso") :: BasePart?
+	local rua, lua_ = model:FindFirstChild("RightUpperArm"), model:FindFirstChild("LeftUpperArm")
+	local rh, lh = model:FindFirstChild("RightHand") :: BasePart?, model:FindFirstChild("LeftHand") :: BasePart?
+	if not (hold and hum and torso and rua and lua_ and rh and lh and hum:FindFirstChildOfClass("Animator")) then return end
+	for _, n in ipairs(IK_NAMES) do local o = hum:FindFirstChild(n); if o then o:Destroy() end end
+	for _, n in ipairs(ATT_NAMES) do local o = torso:FindFirstChild(n); if o then o:Destroy() end end
+	local s = rig.height / HoldConfig.BASE_HEIGHT
+	local function att(name: string, pos: Vector3): Attachment
+		local a = Instance.new("Attachment")
+		a.Name = name
+		a.Position = pos
+		a.Parent = torso
+		return a
+	end
+	local rT, lT = att("VG_RTarget", Vector3.zero), att("VG_LTarget", Vector3.zero)
+	local rP, lP = att("VG_RPole", Vector3.new(1.7, -1.7, 0.9) * s), att("VG_LPole", Vector3.new(-1.7, -1.7, 0.9) * s)
+
+	local rla = model:FindFirstChild("RightLowerArm")
+	local grip = rh:FindFirstChild("VG_GunGrip") or (rla and rla:FindFirstChild("VG_GunGrip")) -- forearm weapons (Forge) grip on the forearm
+	local ikR = Instance.new("IKControl")
+	ikR.Name = "VG_IK_R"
+	ikR.ChainRoot = rua
+	if hold.Kind == "Gun" and grip then
+		ikR.Type = Enum.IKControlType.Transform
+		ikR.EndEffector = grip
+	else
+		ikR.Type = Enum.IKControlType.Position
+		ikR.EndEffector = rh
+	end
+	ikR.Target = rT
+	ikR.Pole = rP
+	ikR.Priority = 2
+	ikR.SmoothTime = 0
+	ikR.Parent = hum
+
+	local ikL = Instance.new("IKControl")
+	ikL.Name = "VG_IK_L"
+	ikL.ChainRoot = lua_
+	ikL.EndEffector = lh
+	local keep = rh:FindFirstChild("VG_LeftHold")
+	if hold.Left == "Keep" and keep then
+		ikL.Type = Enum.IKControlType.Transform -- the left hand rides on the weapon exactly where the statue held it
+		ikL.Target = keep
+	else
+		ikL.Type = Enum.IKControlType.Position
+		ikL.Target = lT
+	end
+	ikL.Pole = lP
+	ikL.Priority = 1
+	ikL.SmoothTime = 0
+	ikL.Parent = hum
+
+	local sparkHand = hold.Sparks and model:FindFirstChild(hold.Sparks)
+	if sparkHand and not sparkHand:FindFirstChild("VG_Sparks") then
+		local a = Instance.new("Attachment")
+		a.Name = "VG_Sparks"
+		a.Parent = sparkHand
+		local pe = Instance.new("ParticleEmitter")
+		pe.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+		pe.Color = ColorSequence.new(Color3.fromRGB(120, 220, 255), Color3.fromRGB(255, 255, 255))
+		pe.LightEmission = 1
+		pe.Rate = 18
+		pe.Lifetime = NumberRange.new(0.15, 0.3)
+		pe.Speed = NumberRange.new(2, 4)
+		pe.SpreadAngle = Vector2.new(180, 180)
+		pe.Size = NumberSequence.new(0.18, 0)
+		pe.Parent = a
+	end
+	rig.ikR, rig.ikL, rig.rTarget, rig.lTarget = ikR, ikL, rT, lT
+	-- two-handed reach: remember where the support grip sits relative to the right grip, and how far the left
+	-- arm reaches, so the weapon can be slid into reach every frame (otherwise the left hand falls off it)
+	rig.leftRel, rig.leftShoulder, rig.leftReach = nil, nil, nil
+	if grip and grip:IsA("Attachment") and keep and keep:IsA("Attachment") and hold.Left == "Keep" and grip.Parent == rh then
+		local sh = torso:FindFirstChild("LeftShoulderRigAttachment") :: Attachment?
+		local luaElbow = lua_:FindFirstChild("LeftElbowRigAttachment") :: Attachment?
+		local lla = model:FindFirstChild("LeftLowerArm")
+		local llaElbow = lla and lla:FindFirstChild("LeftElbowRigAttachment") :: Attachment?
+		local llaWrist = lla and lla:FindFirstChild("LeftWristRigAttachment") :: Attachment?
+		local lhWrist = lh:FindFirstChild("LeftWristRigAttachment") :: Attachment?
+		local shU = lua_:FindFirstChild("LeftShoulderRigAttachment") :: Attachment?
+		if sh and luaElbow and llaElbow and llaWrist and lhWrist and shU then
+			rig.leftRel = (grip :: Attachment).CFrame:Inverse() * (keep :: Attachment).CFrame
+			rig.leftShoulder = sh.Position
+			rig.leftReach = (luaElbow.Position - shU.Position).Magnitude + (llaWrist.Position - llaElbow.Position).Magnitude + lhWrist.Position.Magnitude
+		end
+	end
+	-- The statue bodies carry ragdoll joint limits measured from the statue pose (wrist +-30 deg, elbow 20 deg);
+	-- IK respects them, which stops the arms reaching a proper hold. Switch them off locally while alive.
+	local limits = {}
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BallSocketConstraint") and d.Parent and (d.Parent.Name:find("Arm") or d.Parent.Name:find("Hand")) and d.LimitsEnabled then
+			d.LimitsEnabled = false
+			d.TwistLimitsEnabled = false
+			table.insert(limits, d)
+		end
+	end
+	rig.limits = limits
+end
+local function restoreLimits(rig: Rig) -- back on for the death ragdoll
+	if not rig.limits then return end
+	for _, d in ipairs(rig.limits :: { BallSocketConstraint }) do
+		if d.Parent then d.LimitsEnabled = true; d.TwistLimitsEnabled = true end
+	end
+	rig.limits = nil
+end
+
+local function poseCF(p: HoldConfig.Pose, s: number): CFrame
+	return CFrame.new(p.Pos * s) * CFrame.Angles(0, math.rad(p.Yaw), 0) * CFrame.Angles(math.rad(p.Pitch), 0, 0) * CFrame.Angles(0, 0, math.rad(p.Roll))
+end
+
+-- runs before the Animator solves IK each frame
+RunService.PreAnimation:Connect(function(dt)
+	local now = os.clock()
+	for model, rig in pairs(rigs) do
+		local hold = rig.hold
+		if not hold or not model.Parent then continue end
+		if not ikReady(rig) then
+			if now >= rig.nextResolve then setupIK(rig) end
+			if not ikReady(rig) then continue end
+		end
+		local hum = model:FindFirstChildOfClass("Humanoid")
+		local alive = hum ~= nil and hum.Health > 0
+		if not alive then restoreLimits(rig) end
+		local active = alive and now >= rig.actionUntil
+		;(rig.ikR :: IKControl).Enabled = active
+		;(rig.ikL :: IKControl).Enabled = active
+		if not active then continue end
+
+		local owner = Players:GetPlayerFromCharacter(model)
+		local aiming = owner ~= nil and owner:GetAttribute("Aiming") == true
+		local want = (aiming or now - rig.lastShot < HoldConfig.LOWER_DELAY) and 1 or 0
+		rig.raise += (want - rig.raise) * math.min(1, dt * HoldConfig.RAISE_SPEED)
+
+		local s = rig.height / HoldConfig.BASE_HEIGHT
+		local target = poseCF(hold.Carry, s):Lerp(poseCF(hold.Fire, s), rig.raise)
+		-- running bob (less when raised)
+		local root = model:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local v = root and root.AssemblyLinearVelocity or Vector3.zero
+		local moving = math.clamp(Vector3.new(v.X, 0, v.Z).Magnitude / 16, 0, 1.3)
+		local bob = (hold.Bob or 0.05) * s * moving * (1 - rig.raise * 0.7)
+		local phase = now * 11
+		local bobOffset = Vector3.new(math.sin(phase) * bob * 0.5, math.abs(math.sin(phase)) * bob, 0)
+		target = target + bobOffset
+		-- follow the aim: the torso already takes TORSO_SHARE of the pitch, the arms take the rest
+		local pivot = Vector3.new(0.6, 0.45, 0) * s
+		local extra = rig.pitch * (1 - TORSO_SHARE)
+		target = CFrame.new(pivot) * CFrame.Angles(extra, 0, 0) * CFrame.new(-pivot) * target
+		-- firing kick: the weapon jumps back and up
+		if rig.kick > 0.005 and hold.Kind == "Gun" then
+			target = target * CFrame.new(0, 0, rig.kick * 0.6) * CFrame.Angles(rig.kick * 0.8, 0, 0)
+		end
+		if hold.GripFix then -- per-hero correction between the grip frame and the sculpted weapon
+			local g = hold.GripFix :: Vector3
+			target = target * CFrame.Angles(0, math.rad(g.Y), 0) * CFrame.Angles(math.rad(g.X), 0, 0) * CFrame.Angles(0, 0, math.rad(g.Z))
+		end
+		-- two-handed: slide the weapon toward the left shoulder until the support grip is within the left arm's reach
+		if rig.leftRel and rig.leftShoulder and rig.leftReach then
+			local leftPos = (target * (rig.leftRel :: CFrame)).Position
+			local d = leftPos - (rig.leftShoulder :: Vector3)
+			local limit = (rig.leftReach :: number) * 0.92
+			if d.Magnitude > limit then
+				target = target - d.Unit * (d.Magnitude - limit)
+			end
+		end
+		;(rig.rTarget :: Attachment).CFrame = target
+		if rig.lTarget and hold.LeftCarry then
+			local l = hold.LeftCarry:Lerp(hold.LeftFire or hold.LeftCarry, rig.raise) * s
+			;(rig.lTarget :: Attachment).CFrame = CFrame.new(l + bobOffset * 0.6)
+		end
+	end
+end)
 
 ---------------------------------------------------------------- size feel
 -- footsteps: deeper + louder for big heroes, lighter + quieter for small ones (Roblox's own "Running" sound)
@@ -240,6 +443,7 @@ CombatFx.OnClientEvent:Connect(function(data)
 	if rig then
 		rig.melee = MELEE[data.Weapon] == true
 		rig.kick = math.min(rig.kick + amount, KICK_MAX)
+		rig.lastShot = os.clock() -- raises the weapon into the firing pose
 	end
 end)
 
@@ -264,7 +468,7 @@ RunService.PreSimulation:Connect(function(dt)
 		if now >= rig.nextActionCheck and rig.animator then
 			rig.nextActionCheck = now + 0.15
 			for _, t in ipairs((rig.animator :: Animator):GetPlayingAnimationTracks()) do
-				if t.Priority.Value >= Enum.AnimationPriority.Action.Value and t.WeightCurrent > 0.3 then
+				if ACTION_PRIORITY[t.Priority] and t.WeightCurrent > 0.3 then
 					rig.actionUntil = now + 0.2
 				end
 			end
@@ -273,15 +477,19 @@ RunService.PreSimulation:Connect(function(dt)
 		rig.pitch += (target - rig.pitch) * math.min(1, dt * 14)
 		rig.kick *= math.exp(-dt * KICK_RECOVER)
 		if now < rig.actionUntil then continue end
-		for _, m in ipairs(rig.arms) do
-			m.Transform = CFrame.identity:Lerp(m.Transform, ARM_SWING_KEEP)
+		local usesIK = rig.hold ~= nil and ikReady(rig)
+		if not usesIK then -- no hold style: keep the statue's arm pose (IK rigs are posed by the IK instead)
+			for _, m in ipairs(rig.arms) do
+				m.Transform = CFrame.identity:Lerp(m.Transform, ARM_SWING_KEEP)
+			end
 		end
 		local k = rig.kick
-		if k > 0.005 and not rig.melee then
+		if k > 0.005 and not rig.melee and not usesIK then
 			for _, sh in ipairs(rig.shoulders) do sh.Transform = CFrame.Angles(k * 0.9, 0, 0) * sh.Transform end -- gun rises
 		end
 		if rig.waist then
-			local waist = CFrame.Angles(rig.pitch * TORSO_SHARE, 0, 0)
+			local lean = rig.hold and math.rad(rig.hold.Lean or 0) * (1 - rig.raise * 0.5) or 0
+			local waist = CFrame.Angles(rig.pitch * TORSO_SHARE - lean, 0, 0)
 			if k > 0.005 then
 				waist = if rig.melee then waist * CFrame.Angles(-k * 0.3, k, 0) else waist * CFrame.Angles(k * 0.6, 0, 0)
 			end
