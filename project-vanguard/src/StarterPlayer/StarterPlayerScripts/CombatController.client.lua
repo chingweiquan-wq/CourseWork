@@ -221,8 +221,8 @@ local viewTop = 0.6 -- height of the weapon's top (sights) above its grip, measu
 -- position, Sleeve adds a forearm so a glove reads as the hero's arm instead of a floating hand.
 local VIEW_TWEAK: { [string]: any } = {
 	LightningGauntlet = {
-		Rot = CFrame.Angles(math.rad(78), 0, 0), -- fingers forward, cuff toward the camera
-		Hip = CFrame.new(-0.72, -0.62, -1.4) * CFrame.Angles(0, math.rad(-10), 0), -- Volt wears it on the left arm
+		Rot = CFrame.Angles(0, 0, math.pi) * CFrame.Angles(math.rad(78), 0, 0), -- fingers forward, back of the hand on top
+		Hip = CFrame.new(0.62, -0.5, -1.5) * CFrame.Angles(0, math.rad(12), 0), -- right arm, like the other heroes' weapons
 		Sleeve = { Color = Color3.fromRGB(28, 28, 36), Trim = Color3.fromRGB(255, 225, 60) },
 	},
 	PrecisionRifle = { -- Vex's long rifle: smaller and tucked lower-right so it doesn't cover the HUD
