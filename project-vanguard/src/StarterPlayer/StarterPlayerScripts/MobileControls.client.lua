@@ -56,18 +56,49 @@ local skillBtn = circle("Skill", 0.12, UDim2.new(0.8, 0, 0.36, 0), C.Green)
 local ultBtn = circle("Ultimate", 0.14, UDim2.new(0.92, 0, 0.32, 0), C.Gold)
 local abilityButtons = { Dash = dashBtn, Skill = skillBtn, Ultimate = ultBtn }
 
--- hold-to-fire (auto/burst weapons keep firing while held)
+-- hold-to-fire (auto/burst weapons keep firing while held). Drag-to-aim: while the finger stays down on FIRE,
+-- sliding it turns the camera, so players can shoot and turn with one thumb (touches that start on a button
+-- are ignored by Roblox's own touch camera, which is why turning felt stuck while firing).
+local DRAG_DEG_PER_PIXEL = 0.32 -- turn speed; scaled by zoom below so aiming down sights turns finer
+local fireTouch: InputObject? = nil
+local lastTouchPos: Vector3? = nil
+
+local function releaseFire()
+	fireTouch = nil
+	lastTouchPos = nil
+	fireBtn.BackgroundTransparency = 0.25
+	InputBridge.SetFire(false)
+end
+
 fireBtn.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
 		fireBtn.BackgroundTransparency = 0
 		InputBridge.SetFire(true)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			fireTouch = input
+			lastTouchPos = input.Position
+		end
 	end
 end)
 fireBtn.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-		fireBtn.BackgroundTransparency = 0.25
-		InputBridge.SetFire(false)
-	end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then releaseFire() end
+end)
+-- the finger may slide off the button while turning, so watch the touch itself
+UserInputService.TouchEnded:Connect(function(input)
+	if input == fireTouch then releaseFire() end
+end)
+UserInputService.TouchMoved:Connect(function(input)
+	if input ~= fireTouch or not lastTouchPos then return end
+	local delta = input.Position - lastTouchPos
+	lastTouchPos = input.Position
+	local cam = workspace.CurrentCamera
+	if cam.CameraType ~= Enum.CameraType.Custom then return end
+	local k = math.rad(DRAG_DEG_PER_PIXEL) * (cam.FieldOfView / 70)
+	local pos = cam.CFrame.Position
+	local pitch, yaw = (cam.CFrame - pos):ToEulerAnglesYXZ()
+	yaw -= delta.X * k
+	pitch = math.clamp(pitch - delta.Y * k, math.rad(-80), math.rad(80))
+	cam.CFrame = CFrame.new(pos) * CFrame.fromEulerAnglesYXZ(pitch, yaw, 0)
 end)
 reloadBtn.Activated:Connect(function() InputBridge.PressReload() end)
 -- AIM: tap to toggle aiming down sights
@@ -100,7 +131,7 @@ local function refreshVisible()
 	local inMatch = player:GetAttribute("MatchId") ~= nil
 	gui.Enabled = inMatch
 	if not inMatch then
-		InputBridge.SetFire(false)
+		releaseFire()
 		if aiming then aiming = false; aimLabel.TextColor3 = C.Magenta; InputBridge.SetAim(false) end
 	end
 end

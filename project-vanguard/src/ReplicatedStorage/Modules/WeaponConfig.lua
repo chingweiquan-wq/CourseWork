@@ -76,6 +76,10 @@ WeaponConfig.Weapons.PrecisionRifle.Scope = true
 WeaponConfig.Weapons.PrecisionRifle.AimSpeedMult = 0.55
 WeaponConfig.Weapons.EnergyBlades.NoAim = true
 WeaponConfig.Weapons.LightningGauntlet.NoAim = true
+-- big weapons keep their place on the right while aiming (zoom only); the rest line their sights up under the crosshair
+for _, id in ipairs({ "HeavyCannon", "Scattergun", "RivetGun", "MedicalProjector" }) do
+	WeaponConfig.Weapons[id].AimStyle = "Zoom"
+end
 
 -- Fixed shotgun pattern around `dir`: one centre pellet + a ring of (Pellets - 1) at PelletSpread degrees.
 function WeaponConfig.PelletDirs(dir: Vector3, w: any): { Vector3 }

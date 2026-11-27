@@ -73,9 +73,9 @@ GameConfig.Combat = {
 }
 
 GameConfig.Abilities = {
-	UltPassivePerSecond = 4,   -- ult charge points gained per second just by being alive in a live match
-	ChargePerDamage = 1,       -- ult points per point of damage dealt
-	ChargePerHeal = 1,         -- ult points per point of healing done
+	UltPassivePerSecond = 6.8, -- (x1.7) ult charge points gained per second just by being alive in a live match
+	ChargePerDamage = 1.7,     -- ult points per point of damage dealt (x1.7 = ult charges 70% faster)
+	ChargePerHeal = 1.7,       -- ult points per point of healing done
 	AimRayLength = 120,        -- max distance used when an ability needs an aim point
 	StudioFastUlt = true,      -- Studio solo testing only: ult charges 10x faster so it can be tested quickly
 }
@@ -109,7 +109,7 @@ GameConfig.Ranked = {
 -- Progression (Phase 5): TOKENS economy, daily streak, anti-farm. All rewards are decided on the server.
 GameConfig.Progression = {
 	StartingTokens = 0,
-	Rewards = { Complete = 40, Win = 30, MVP = 10 }, -- per finished match
+	Rewards = { Complete = 40, Win = 30, MVP = 10, FirstMatch = 2000 }, -- per finished match (+ one-time FirstMatch bonus)
 	RankedMultiplier = 1.25,  -- ranked matches pay a bit more
 	MinActiveFraction = 0.3,  -- AFK check: must be moving / on the core for 30% of the match to earn tokens
 	ActivitySample = 2,       -- seconds between activity samples

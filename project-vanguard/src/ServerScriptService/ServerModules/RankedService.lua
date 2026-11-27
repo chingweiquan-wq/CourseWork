@@ -107,6 +107,7 @@ local function reconcile(data: any): PlayerData
 	pr.RobuxSpent = tonumber(pr.RobuxSpent) or 0
 	pr.Receipts = typeof(pr.Receipts) == "table" and pr.Receipts or {}
 	pr.StarterPackBought = pr.StarterPackBought == true -- one-time R$1 token pack
+	pr.FirstMatchBonus = pr.FirstMatchBonus == true -- one-time 2000-token bonus after the first real match
 	local sk = typeof(pr.Skins) == "table" and pr.Skins or {}
 	sk.Owned = typeof(sk.Owned) == "table" and sk.Owned or {}
 	sk.Equipped = typeof(sk.Equipped) == "table" and sk.Equipped or {}

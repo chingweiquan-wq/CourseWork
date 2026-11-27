@@ -215,11 +215,44 @@ end
 
 local HeroAssets = ReplicatedStorage:WaitForChild("HeroAssets", 5)
 local VIEWMODEL_SCALE = 0.55
+local viewTop = 0.6 -- height of the weapon's top (sights) above its grip, measured when the viewmodel is built
+
+-- Per-weapon first-person fixes. Rot turns the model inside the viewmodel, Hip replaces the default hip
+-- position, Sleeve adds a forearm so a glove reads as the hero's arm instead of a floating hand.
+local VIEW_TWEAK: { [string]: any } = {
+	LightningGauntlet = {
+		Rot = CFrame.Angles(math.rad(78), 0, 0), -- fingers forward, cuff toward the camera
+		Hip = CFrame.new(-0.72, -0.62, -1.4) * CFrame.Angles(0, math.rad(-10), 0), -- Volt wears it on the left arm
+		Sleeve = { Color = Color3.fromRGB(28, 28, 36), Trim = Color3.fromRGB(255, 225, 60) },
+	},
+	PrecisionRifle = { -- Vex's long rifle: smaller and tucked lower-right so it doesn't cover the HUD
+		Scale = 0.4,
+		Hip = CFrame.new(0.78, -0.58, -1.65) * CFrame.Angles(0, math.rad(5), 0),
+	},
+}
+
+-- highest point of the visible weapon above its grip, in the template's own (pivot) space
+local function measureTop(template: Model): number
+	local piv = template:GetPivot()
+	local top = 0
+	for _, p in ipairs(template:GetDescendants()) do
+		if p:IsA("BasePart") and p.Transparency < 1 then
+			local h = p.Size / 2
+			for _, c in ipairs({ Vector3.new(h.X, h.Y, h.Z), Vector3.new(-h.X, h.Y, h.Z), Vector3.new(h.X, h.Y, -h.Z), Vector3.new(-h.X, h.Y, -h.Z),
+				Vector3.new(h.X, -h.Y, h.Z), Vector3.new(-h.X, -h.Y, h.Z), Vector3.new(h.X, -h.Y, -h.Z), Vector3.new(-h.X, -h.Y, -h.Z) }) do
+				top = math.max(top, piv:PointToObjectSpace(p.CFrame:PointToWorldSpace(c)).Y)
+			end
+		end
+	end
+	return top
+end
 
 -- First-person weapon from the ForgeGUI 3D model (pivot = grip, -Z = forward).
 local function buildModelViewmodel(w: any, template: Model): Model
 	local model = Instance.new("Model")
 	model.Name = "Viewmodel"
+	local tweak = VIEW_TWEAK[w.Id]
+	local scale = (tweak and tweak.Scale) or VIEWMODEL_SCALE
 	local function addCopy(offset: CFrame)
 		local c = template:Clone()
 		SkinVisuals.Apply(c, SkinConfig.EquippedFor(player, w.Id)) -- equipped skin on the first-person weapon
@@ -228,17 +261,36 @@ local function buildModelViewmodel(w: any, template: Model): Model
 				d.Anchored = true; d.CanCollide = false; d.CanQuery = false; d.CanTouch = false; d.CastShadow = false
 			end
 		end
-		c:ScaleTo(VIEWMODEL_SCALE)
+		c:ScaleTo(scale)
 		c:PivotTo(offset)
 		for _, d in ipairs(c:GetChildren()) do d.Parent = model end
 		c:Destroy()
 	end
-	addCopy(CFrame.new())
+	addCopy(tweak and tweak.Rot or CFrame.new())
 	if w.Id == "EnergyBlades" then addCopy(CFrame.new(-1.1, 0, 0)) end -- second blade in the left hand
+	viewTop = measureTop(template) * scale
+	if tweak and tweak.Sleeve then
+		-- forearm from the glove's cuff back toward the bottom of the screen
+		local rot = tweak.Rot or CFrame.new()
+		local cuff = rot:PointToWorldSpace(Vector3.new(0, viewTop * 0.95, 0))
+		local back = cuff + Vector3.new(0, -0.22, 1.0)
+		local dir = (back - cuff).Unit
+		local function seg(name: string, a: Vector3, b: Vector3, d: number, color: Color3, mat: Enum.Material)
+			local p = Instance.new("Part")
+			p.Name = name; p.Shape = Enum.PartType.Cylinder
+			p.Size = Vector3.new((b - a).Magnitude, d, d)
+			p.CFrame = CFrame.lookAt((a + b) / 2, b) * CFrame.Angles(0, math.rad(90), 0)
+			p.Color = color; p.Material = mat
+			p.Anchored = true; p.CanCollide = false; p.CanQuery = false; p.CanTouch = false; p.CastShadow = false
+			p.Parent = model
+		end
+		seg("Sleeve", cuff, back, 0.34, tweak.Sleeve.Color, Enum.Material.Metal)
+		seg("Trim", cuff + dir * 0.04, cuff + dir * 0.065, 0.355, tweak.Sleeve.Trim, Enum.Material.Neon)
+	end
 	local muzzle = Instance.new("Part")
 	muzzle.Name = "Muzzle"; muzzle.Size = Vector3.one * 0.1; muzzle.Transparency = 1
 	muzzle.Anchored = true; muzzle.CanCollide = false; muzzle.CanQuery = false; muzzle.CanTouch = false
-	muzzle.CFrame = CFrame.new(0, 0, -(template:GetAttribute("MuzzleDistance") or 1) * VIEWMODEL_SCALE)
+	muzzle.CFrame = CFrame.new(0, 0, -(template:GetAttribute("MuzzleDistance") or 1) * scale)
 	muzzle.Parent = model
 	local pivot = Instance.new("Part")
 	pivot.Name = "Pivot"; pivot.Size = Vector3.one * 0.1; pivot.Transparency = 1
@@ -312,7 +364,9 @@ RunService.RenderStepped:Connect(function(dt)
 		recoil = math.max(0, recoil - dt * 6)
 		local cam = workspace.CurrentCamera
 		local bob = hum.MoveDirection.Magnitude > 0 and math.sin(os.clock() * 9) * 0.04 or 0
+		local tweak = VIEW_TWEAK[w.Id]
 		local offset = CFrame.new(0.8, -0.62 + bob, -1.55 + recoil * 0.15) * CFrame.Angles(recoil * 0.1, math.rad(9), 0)
+		if tweak and tweak.Hip then offset = CFrame.new(0, bob, recoil * 0.15) * tweak.Hip * CFrame.Angles(recoil * 0.1, 0, 0) end
 		if w.Type == "Melee" then offset = CFrame.new(0.6, -0.55 + bob, -1.4) * CFrame.Angles(math.rad(-20) + recoil * 0.5, math.rad(10), 0) end
 		-- Phase 7 animation layers: equip swing-in, reload dip + tilt, ability cast push, walk sway
 		local reloading = player:GetAttribute("Reloading") == true
@@ -325,10 +379,17 @@ RunService.RenderStepped:Connect(function(dt)
 		offset = offset
 			* CFrame.new(sway, -0.7 * (1 - equip) - 0.3 * reloadBlend, 0.1 * reloadBlend - 0.25 * castKick)
 			* CFrame.Angles(math.rad(-55) * (1 - equip) + math.rad(-30) * reloadBlend + math.rad(12) * castKick, 0, math.rad(28) * reloadBlend)
-		-- aiming: slide the gun to the centre of the screen (and hide it behind the sniper scope)
+		-- aiming. "Zoom" weapons (big ones) stay on the right and only zoom in; the rest drop to the bottom-centre
+		-- with their sights just under the crosshair so the middle of the screen stays clear. The sniper hides
+		-- behind its scope overlay.
 		if aimBlend > 0 and w.Type ~= "Melee" then
-			local centre = CFrame.new(0, -0.42, -1.25 + recoil * 0.12) * CFrame.Angles(recoil * 0.06, 0, 0)
-			offset = offset:Lerp(centre, aimBlend)
+			local target
+			if w.AimStyle == "Zoom" then
+				target = CFrame.new(0.62, -0.66, -1.5 + recoil * 0.12) * CFrame.Angles(recoil * 0.06, math.rad(6), 0)
+			else
+				target = CFrame.new(0, -viewTop - 0.07, -1.2 + recoil * 0.12) * CFrame.Angles(recoil * 0.06, 0, 0)
+			end
+			offset = offset:Lerp(target, aimBlend)
 			if w.Scope and aimBlend > 0.85 then offset *= CFrame.new(0, -3, 0) end
 		end
 		local vm: Model = viewmodel :: Model

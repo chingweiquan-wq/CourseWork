@@ -284,6 +284,13 @@ local function onEnded(match: any)
 					local bonus = math.floor(total * Cfg.RankedMultiplier) - total
 					if bonus > 0 then table.insert(lines, { "Ranked", bonus }); total += bonus end
 				end
+				-- one-time welcome bonus for the first real (non-practice) match a player finishes
+				if not pr.FirstMatchBonus and (r.FirstMatch or 0) > 0 then
+					pr.FirstMatchBonus = true
+					table.insert(lines, { "First Match Bonus", r.FirstMatch })
+					total += r.FirstMatch
+					Notify:FireClient(p, string.format("First match complete! +%d tokens welcome bonus", r.FirstMatch))
+				end
 				pr.Tokens += total
 				pr.Stats.TokensEarned += total
 			end
