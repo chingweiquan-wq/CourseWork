@@ -225,6 +225,17 @@ local VIEW_TWEAK: { [string]: any } = {
 		Hip = CFrame.new(0.62, -0.5, -1.5) * CFrame.Angles(0, math.rad(12), 0), -- right arm, like the other heroes' weapons
 		Sleeve = { Color = Color3.fromRGB(28, 28, 36), Trim = Color3.fromRGB(255, 225, 60) },
 	},
+	EnergyBlades = { -- Shade: one dagger in each hand, tilted up and in so both are clearly visible
+		Hip = CFrame.new(0, -0.58, -1.3),
+		Copies = {
+			CFrame.new(0.95, 0, 0) * CFrame.Angles(math.rad(35), math.rad(-8), math.rad(-20)),
+			CFrame.new(-0.95, 0, 0) * CFrame.Angles(math.rad(35), math.rad(8), math.rad(20)),
+		},
+	},
+	HeavyCannon = { -- Titan's cannon: smaller and further out so it doesn't fill the lower-right of the screen
+		Scale = 0.42,
+		Hip = CFrame.new(0.85, -0.62, -1.7) * CFrame.Angles(0, math.rad(8), 0),
+	},
 	PrecisionRifle = { -- Vex's long rifle: smaller and tucked lower-right so it doesn't cover the HUD
 		Scale = 0.4,
 		Hip = CFrame.new(0.78, -0.58, -1.65) * CFrame.Angles(0, math.rad(5), 0),
@@ -266,8 +277,12 @@ local function buildModelViewmodel(w: any, template: Model): Model
 		for _, d in ipairs(c:GetChildren()) do d.Parent = model end
 		c:Destroy()
 	end
-	addCopy(tweak and tweak.Rot or CFrame.new())
-	if w.Id == "EnergyBlades" then addCopy(CFrame.new(-1.1, 0, 0)) end -- second blade in the left hand
+	if tweak and tweak.Copies then
+		for _, c in ipairs(tweak.Copies) do addCopy(c) end
+	else
+		addCopy(tweak and tweak.Rot or CFrame.new())
+		if w.Id == "EnergyBlades" then addCopy(CFrame.new(-1.1, 0, 0)) end -- second blade in the left hand
+	end
 	viewTop = measureTop(template) * scale
 	if tweak and tweak.Sleeve then
 		-- forearm from the glove's cuff back toward the bottom of the screen
@@ -366,8 +381,10 @@ RunService.RenderStepped:Connect(function(dt)
 		local bob = hum.MoveDirection.Magnitude > 0 and math.sin(os.clock() * 9) * 0.04 or 0
 		local tweak = VIEW_TWEAK[w.Id]
 		local offset = CFrame.new(0.8, -0.62 + bob, -1.55 + recoil * 0.15) * CFrame.Angles(recoil * 0.1, math.rad(9), 0)
-		if tweak and tweak.Hip then offset = CFrame.new(0, bob, recoil * 0.15) * tweak.Hip * CFrame.Angles(recoil * 0.1, 0, 0) end
-		if w.Type == "Melee" then offset = CFrame.new(0.6, -0.55 + bob, -1.4) * CFrame.Angles(math.rad(-20) + recoil * 0.5, math.rad(10), 0) end
+		if tweak and tweak.Hip then
+			offset = CFrame.new(0, bob, recoil * 0.15) * tweak.Hip * CFrame.Angles(recoil * (w.Type == "Melee" and 0.5 or 0.1), 0, 0)
+		end
+		if w.Type == "Melee" and not (tweak and tweak.Hip) then offset = CFrame.new(0.6, -0.55 + bob, -1.4) * CFrame.Angles(math.rad(-20) + recoil * 0.5, math.rad(10), 0) end
 		-- Phase 7 animation layers: equip swing-in, reload dip + tilt, ability cast push, walk sway
 		local reloading = player:GetAttribute("Reloading") == true
 		reloadBlend += ((reloading and 1 or 0) - reloadBlend) * math.min(dt * 12, 1)
@@ -385,9 +402,10 @@ RunService.RenderStepped:Connect(function(dt)
 		if aimBlend > 0 and w.Type ~= "Melee" then
 			local target
 			if w.AimStyle == "Zoom" then
-				target = CFrame.new(0.62, -0.66, -1.5 + recoil * 0.12) * CFrame.Angles(recoil * 0.06, math.rad(6), 0)
+				-- pushed further out: the zoomed-in view makes anything close to the camera look bigger
+				target = CFrame.new(0.78, -0.74, -2.0 + recoil * 0.12) * CFrame.Angles(recoil * 0.06, math.rad(6), 0)
 			else
-				target = CFrame.new(0, -viewTop - 0.07, -1.2 + recoil * 0.12) * CFrame.Angles(recoil * 0.06, 0, 0)
+				target = CFrame.new(0, -viewTop - 0.1, -1.2 + recoil * 0.12) * CFrame.Angles(recoil * 0.06, 0, 0)
 			end
 			offset = offset:Lerp(target, aimBlend)
 			if w.Scope and aimBlend > 0.85 then offset *= CFrame.new(0, -3, 0) end
